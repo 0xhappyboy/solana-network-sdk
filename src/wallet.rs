@@ -1,13 +1,17 @@
 use bs58;
-use solana_sdk::{signature::Signer, signer::keypair::Keypair};
+use solana_sdk::{
+    signature::{Signature, Signer},
+    signer::keypair::Keypair,
+};
 
-use crate::wallet::tool::private_key_base58_to_bytes;
+use crate::tool::wallet::private_key_base58_to_bytes;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Wallet {
     pub public_key: String,
     pub private_key_32: String,
     pub private_key_64: String,
+    pub keypair: Option<Keypair>,
 }
 
 impl Wallet {
@@ -19,21 +23,23 @@ impl Wallet {
     /// let w: Wallet = Wallet::create_new_wallet();
     /// ```
     pub fn create_new_wallet() -> Wallet {
-        let keypair = Keypair::new();
-        let public_key = keypair.pubkey();
-        let secret_key_32_bytes = keypair.secret_bytes();
-        let secret_key_64_bytes = keypair.to_bytes();
+        let k = Keypair::new();
+        let public_key = k.pubkey();
+        let secret_key_32_bytes = k.secret_bytes();
+        let secret_key_64_bytes = k.to_bytes();
         let secret_key_32 = bs58::encode(&secret_key_32_bytes).into_string();
         let secret_key_64 = bs58::encode(&secret_key_64_bytes).into_string();
         Wallet {
             public_key: public_key.to_string(),
             private_key_32: secret_key_32,
             private_key_64: secret_key_64,
+            keypair: Some(k),
         }
     }
     /// restore a wallet from a 64 bytes private key.
     /// # private_key
     /// * 64 bytes private key
+    /// # Example
     /// ```rust
     /// let w = Wallet::from_private_key_64("64 bytes private");
     /// ```
@@ -44,15 +50,17 @@ impl Wallet {
             public_key: k.pubkey().to_string(),
             private_key_32: private_key_32,
             private_key_64: private_key.to_string(),
+            keypair: Some(k),
         }
     }
     /// restore a wallet from a 32 bytes private key.
     /// # private_key
     /// * 64 bytes private key
+    /// # Example
     /// ```rust
     /// let w = Wallet::from_private_key_64("32 bytes private");
     /// ```
-    pub fn from_private_key_32(private_key: &str) -> Wallet {
+    pub fn from_private_key_32(private_key: &str) -> Result<Wallet, String> {
         match private_key_base58_to_bytes(private_key) {
             Ok(v) => {
                 if v.len() == 32 {
@@ -63,34 +71,16 @@ impl Wallet {
                         public_key: k.pubkey().to_string(),
                         private_key_32: private_key.to_string(),
                         private_key_64: bs58::encode(k.to_bytes()).into_string(),
+                        keypair: Some(k),
                     };
-                    return w;
+                    return Ok(w);
                 } else {
-                    return Wallet::default();
+                    return Err("exceeds 32 bytes.".to_string());
                 }
             }
-            Err(_) => {
-                return Wallet::default();
+            Err(e) => {
+                return Err(e);
             }
-        }
-    }
-}
-
-pub mod tool {
-    pub fn private_key_base58_to_bytes(private_key: &str) -> Result<Vec<u8>, String> {
-        match bs58::decode(private_key).into_vec() {
-            Ok(v) => return Ok(v),
-            Err(_) => return Err("base58 decode error".to_string()),
-        }
-    }
-}
-
-impl Default for Wallet {
-    fn default() -> Self {
-        Self {
-            public_key: "".to_string(),
-            private_key_32: "".to_string(),
-            private_key_64: "".to_string(),
         }
     }
 }

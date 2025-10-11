@@ -1,15 +1,28 @@
+pub mod account;
+pub mod dex;
 pub mod global;
+pub mod message;
+pub mod price;
+pub mod scan;
+pub mod tool;
+pub mod trade;
 pub mod types;
 pub mod wallet;
 
 use solana_client::{
     nonblocking::rpc_client::RpcClient, rpc_client::GetConfirmedSignaturesForAddress2Config,
 };
-use solana_sdk::epoch_info::EpochInfo;
-use std::sync::Arc;
+use solana_sdk::{epoch_info::EpochInfo, native_token::LAMPORTS_PER_SOL, pubkey::Pubkey};
+use std::{str::FromStr, sync::Arc};
 
 use crate::{
-    global::{SOLANA_DEV_NET_URL, SOLANA_MAIN_NET_URL, SOLANA_TEST_NET_URL},
+    account::Account,
+    dex::raydium::{v2::RaydiumV2, v3::RaydiumV3},
+    global::{
+        SOLANA_ANKR_MAIN_NET_URL, SOLANA_DEV_NET_URL, SOLANA_OFFICIAL_MAIN_NET_URL,
+        SOLANA_SERUM_MAIN_NET_URL, SOLANA_TEST_NET_URL,
+    },
+    trade::Trade,
     types::Mode,
     wallet::Wallet,
 };
@@ -26,7 +39,7 @@ impl Solana {
         let mut url = String::new();
         match mode {
             Mode::MAIN => {
-                url = SOLANA_MAIN_NET_URL.to_string();
+                url = SOLANA_OFFICIAL_MAIN_NET_URL.to_string();
             }
             Mode::TEST => {
                 url = SOLANA_TEST_NET_URL.to_string();
@@ -148,5 +161,35 @@ impl Solana {
                 return Err(format!("get core version error: {:?}", e));
             }
         }
+    }
+    /// get account
+    /// # Returns
+    /// * 0 solana balance
+    /// * 1 solana lamports balance
+    pub async fn get_account_balance(&self, public_key: &str) -> Result<(f64, u64), f64> {
+        match Pubkey::from_str(&public_key) {
+            Ok(pubkey) => match self.client_arc().get_balance(&pubkey).await {
+                Ok(balance) => {
+                    return Ok((balance as f64 / LAMPORTS_PER_SOL as f64, balance));
+                }
+                Err(_) => return Err(0.0),
+            },
+            Err(_) => return Err(0.0),
+        }
+    }
+    /// create account
+    pub fn create_account(&self) -> Account {
+        Account::new(self.client_arc())
+    }
+    /// create trade
+    pub fn create_trade(&self) -> Trade {
+        Trade::new(self.client_arc())
+    }
+    /// create raydium
+    pub fn create_raydium_v2(&self) -> RaydiumV2 {
+        RaydiumV2::new(self.client_arc())
+    }
+    pub fn create_raydium_v3(&self) -> RaydiumV3 {
+        RaydiumV3::new(self.client_arc())
     }
 }
