@@ -2,6 +2,12 @@
 name = "solana-trader"
 version = "0.1.0"
 edition = "2024"
+authors = ["happyboy <superhappyboy1995@gmail.com>"]
+description = "Implemented most of the commonly used practical transaction-related functions on the Solana network."
+keywords = ["trade", "crypto", "finance", "solana"]
+license = "GPL-3.0"
+readme = "README.md"
+repository = "https://github.com/0xhappyboy/solana-trader"
 
 [dependencies]
 solana-client = "3.0.0"
