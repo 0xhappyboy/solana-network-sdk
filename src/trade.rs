@@ -8,9 +8,6 @@ use solana_sdk::signature::Signature;
 use solana_sdk::{message::Message, pubkey::Pubkey};
 use solana_transaction_status::{EncodedConfirmedTransactionWithStatusMeta, UiTransactionEncoding};
 
-/// Transaction information processing function type
-type FnTradeInfoHandle = fn(EncodedConfirmedTransactionWithStatusMeta);
-
 pub struct Trade {
     client: Arc<RpcClient>,
 }
@@ -117,7 +114,11 @@ impl Trade {
     ///     // handle transaction information.
     ///    }).await;
     /// ```
-    pub async fn get_trade_details(&self, signature: &str, handle: FnTradeInfoHandle) {
+    pub async fn get_trade_details(
+        &self,
+        signature: &str,
+        handle: impl Fn(EncodedConfirmedTransactionWithStatusMeta),
+    ) {
         let signature = match Signature::from_str(&signature) {
             Ok(signature) => signature,
             Err(_) => todo!(),
