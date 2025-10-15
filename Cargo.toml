@@ -1,5 +1,5 @@
 [package]
-name = "solana-trader"
+name = "solana-network-sdk"
 version = "0.1.2"
 edition = "2024"
 authors = ["happyboy <superhappyboy1995@gmail.com>"]
@@ -7,7 +7,7 @@ description = "Implemented most of the commonly used practical transaction-relat
 keywords = ["trade", "crypto", "finance", "solana"]
 license = "GPL-3.0"
 readme = "README.md"
-repository = "https://github.com/0xhappyboy/solana-trader"
+repository = "https://github.com/0xhappyboy/solana-network-sdk"
 
 [dependencies]
 solana-client = "3.0.0"

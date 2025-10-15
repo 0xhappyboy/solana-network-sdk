@@ -1,5 +1,5 @@
 <h1 align="center">
-    🤵 Solana Trader
+    🤵 Solana Network SDK
 </h1>
 <h4 align="center">
 实现了 Solana 网络上大部分常用的实用交易相关功能.

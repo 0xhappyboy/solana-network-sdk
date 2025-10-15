@@ -3679,6 +3679,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "solana-network-sdk"
+version = "0.1.2"
+dependencies = [
+ "bs58",
+ "bytemuck",
+ "solana-client",
+ "solana-program",
+ "solana-sdk",
+ "solana-transaction-status",
+ "spl-token",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
 name = "solana-nonce"
 version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4739,21 +4754,6 @@ dependencies = [
  "solana-transaction",
  "solana-transaction-error",
  "thiserror 2.0.17",
- "tokio",
-]
-
-[[package]]
-name = "solana-trader"
-version = "0.1.2"
-dependencies = [
- "bs58",
- "bytemuck",
- "solana-client",
- "solana-program",
- "solana-sdk",
- "solana-transaction-status",
- "spl-token",
- "thiserror 1.0.69",
  "tokio",
 ]
 

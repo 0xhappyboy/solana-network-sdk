@@ -1,5 +1,5 @@
 <h1 align="center">
-    🤵 Solana Trader
+    🤵 Solana Network SDK
 </h1>
 <h4 align="center">
 Implemented most of the commonly used practical transaction-related functions on the Solana network.
