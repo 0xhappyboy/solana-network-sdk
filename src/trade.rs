@@ -296,6 +296,228 @@ impl Trade {
         }
     }
 
+    /// Get the transaction record with address A as the payee and address B included
+    ///
+    /// # Params
+    /// address_a - Recipient address
+    /// address_b - Payer address
+    /// limit - Maximum number of transactions returned
+    ///
+    /// # Example
+    /// ```rust
+    /// let transactions = trade.get_transactions_by_recipient_and_payer(
+    ///     "Recipient address",
+    ///     "payer",
+    ///     10
+    /// ).await?;
+    /// ```
+    pub async fn get_transactions_by_recipient_and_payer(
+        &self,
+        address_a: &str,
+        address_b: &str,
+        limit: usize,
+    ) -> UnifiedResult<Vec<RpcConfirmedTransactionStatusWithSignature>> {
+        let all_transactions =
+            Self::get_transactions_history_filtered(&self.client, address_a, |_| true).await?;
+        let mut matching_transactions = Vec::new();
+        let address_b_pubkey = Pubkey::from_str(address_b)
+            .map_err(|_| UnifiedError::Error("address B format error".to_string()))?;
+        let address_b_str = address_b_pubkey.to_string();
+        for transaction in all_transactions.into_iter().take(limit) {
+            // Check if the transaction contains address B
+            if !self
+                .is_transaction_contains_address(&transaction.signature, &address_b_str)
+                .await
+            {
+                continue;
+            }
+            match self.get_transaction_details(&transaction.signature).await {
+                Ok(tx_details) => {
+                    let transaction_info = TransactionInfo::from_encoded_transaction(
+                        &tx_details,
+                        &transaction.signature,
+                        "solana",
+                    );
+                    if Self::is_address_recipient_in_transaction(&transaction_info, address_a) {
+                        matching_transactions.push(transaction);
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
+        Ok(matching_transactions)
+    }
+
+    /// Determine whether address A is the recipient in the transaction
+    ///
+    /// # Params
+    /// transaction_info - transaction information
+    /// address - address to check
+    ///
+    /// # Returns
+    /// true - address is the recipient
+    /// false - address is not the recipient
+    fn is_address_recipient_in_transaction(
+        transaction_info: &TransactionInfo,
+        address: &str,
+    ) -> bool {
+        if transaction_info.balance_change > 0 {
+            if let Some(post_balance) = transaction_info
+                .post_token_balances
+                .iter()
+                .find(|balance| balance.owner == address)
+            {
+                if let Some(pre_balance) = transaction_info
+                    .pre_token_balances
+                    .iter()
+                    .find(|balance| balance.owner == address && balance.mint == post_balance.mint)
+                {
+                    let pre_amount = pre_balance
+                        .ui_token_amount
+                        .amount
+                        .parse::<u64>()
+                        .unwrap_or(0);
+                    let post_amount = post_balance
+                        .ui_token_amount
+                        .amount
+                        .parse::<u64>()
+                        .unwrap_or(0);
+                    return post_amount > pre_amount;
+                }
+            }
+        }
+        false
+    }
+
+    /// Determine whether address B is the payer in the transaction
+    ///
+    /// # Params
+    /// transaction_info - transaction info
+    /// address - address to check
+    ///
+    /// # Returns
+    /// true - address B is the payee
+    /// false - address B is not the payee
+    fn is_address_payer_in_transaction(
+        transaction_info: &TransactionInfo,
+        address_b: &str,
+    ) -> bool {
+        if transaction_info.signers.contains(&address_b.to_string()) {
+            return true;
+        }
+        false
+    }
+
+    /// transaction where address A is the payee and address B is the payee
+    ///
+    /// # Params
+    /// address_a - Recipient address
+    /// address_b - Payer address
+    /// limit - Maximum number of transactions returned
+    ///
+    pub async fn get_transactions_where_a_recipient_b_payer(
+        &self,
+        address_a: &str,
+        address_b: &str,
+        limit: usize,
+    ) -> UnifiedResult<Vec<RpcConfirmedTransactionStatusWithSignature>> {
+        let candidate_transactions = self
+            .get_transactions_by_recipient_and_payer(address_a, address_b, limit * 2)
+            .await?;
+        let mut confirmed_transactions = Vec::new();
+        for transaction in candidate_transactions.into_iter().take(limit) {
+            match self.get_transaction_details(&transaction.signature).await {
+                Ok(tx_details) => {
+                    let transaction_info = TransactionInfo::from_encoded_transaction(
+                        &tx_details,
+                        &transaction.signature,
+                        "solana",
+                    );
+                    // Address A is the payee and Address B is the payee
+                    if Self::is_address_recipient_in_transaction(&transaction_info, address_a)
+                        && Self::is_address_payer_in_transaction(&transaction_info, address_b)
+                    {
+                        confirmed_transactions.push(transaction);
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
+        Ok(confirmed_transactions)
+    }
+
+    /// Quickly determine whether there is a payment relationship between two addresses (address B pays address A)
+    ///
+    /// # Params
+    /// address_a - Recipient address
+    /// address_b - Payer address
+    ///
+    /// # Returns
+    /// Some(signature) - If there is a payment relationship
+    /// None - If there is no payment relationship
+    pub async fn has_payment_relationship(
+        &self,
+        address_a: &str,
+        address_b: &str,
+    ) -> UnifiedResult<Option<String>> {
+        let transactions = self
+            .get_transactions_where_a_recipient_b_payer(address_a, address_b, 1)
+            .await?;
+        if let Some(transaction) = transactions.first() {
+            Ok(Some(transaction.signature.clone()))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Get the total amount paid by address B to address A
+    ///
+    /// # Params
+    /// address_a - Recipient address
+    /// address_b - Payer address
+    /// time_range - Time range (seconds), None means all time
+    ///
+    /// # Returns
+    /// Total payment amount (lamports)
+    pub async fn get_total_payment_amount(
+        &self,
+        address_a: &str,
+        address_b: &str,
+        time_range: Option<u64>,
+    ) -> UnifiedResult<u64> {
+        let transactions = self
+            .get_transactions_where_a_recipient_b_payer(address_a, address_b, 100)
+            .await?;
+        let mut total_amount = 0u64;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        for transaction in transactions {
+            match self.get_transaction_details(&transaction.signature).await {
+                Ok(tx_details) => {
+                    let transaction_info = TransactionInfo::from_encoded_transaction(
+                        &tx_details,
+                        &transaction.signature,
+                        "solana",
+                    );
+                    if let Some(range) = time_range {
+                        if let Some(block_time) = transaction_info.block_time {
+                            if (now - block_time as u64) > range {
+                                continue;
+                            }
+                        }
+                    }
+                    if let Ok(amount) = transaction_info.value.parse::<u64>() {
+                        total_amount += amount;
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
+        Ok(total_amount)
+    }
+
     /// checks whether a single transaction contains a specified address
     async fn is_transaction_contains_address(&self, signature: &str, target_address: &str) -> bool {
         match self.get_transaction_details(signature).await {
@@ -1112,6 +1334,26 @@ impl TransactionInfo {
                 ) => partially_decoded.data.clone(),
             },
         }
+    }
+
+    /// Determine whether the specified address in the current transaction is the recipient
+    pub fn is_recipient(&self, address: &str) -> bool {
+        Trade::is_address_recipient_in_transaction(self, address)
+    }
+
+    /// Determine whether the specified address in the current transaction is the payer
+    pub fn is_payer(&self, address: &str) -> bool {
+        Trade::is_address_payer_in_transaction(self, address)
+    }
+
+    /// Get the payment amount of the transaction (lamports)
+    pub fn get_payment_amount(&self) -> u64 {
+        self.value.parse::<u64>().unwrap_or(0)
+    }
+
+    /// Get the payment amount of the transaction (SOL)
+    pub fn get_payment_amount_sol(&self) -> f64 {
+        self.value_sol
     }
 }
 
