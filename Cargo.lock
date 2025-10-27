@@ -3680,10 +3680,12 @@ dependencies = [
 
 [[package]]
 name = "solana-network-sdk"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "bs58",
  "bytemuck",
+ "serde",
+ "serde_json",
  "solana-client",
  "solana-program",
  "solana-sdk",
