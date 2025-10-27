@@ -296,7 +296,9 @@ impl Trade {
         }
     }
 
-    /// Get the transaction record with address A as the payee and address B included
+    /// get the transaction record with address A as the payer and address B included
+    /// loose filtering: Address A is the payer and the transaction contains address B (not necessarily the payer)
+    /// address B only needs to appear in the transaction (may be the payer, payer, signer)
     ///
     /// # Params
     /// address_a - Recipient address
@@ -348,6 +350,46 @@ impl Trade {
         Ok(matching_transactions)
     }
 
+    /// transaction where address A is the payer and address B is the payer
+    /// strict screening: Ensure that address A is the recipient and address B is the payer
+    /// clear address B to address A capital flow
+    ///
+    /// # Params
+    /// address_a - Recipient address
+    /// address_b - Payer address
+    /// limit - Maximum number of transactions returned
+    ///
+    pub async fn get_transactions_by_recipient_and_payer_strict(
+        &self,
+        address_a: &str,
+        address_b: &str,
+        limit: usize,
+    ) -> UnifiedResult<Vec<RpcConfirmedTransactionStatusWithSignature>> {
+        let candidate_transactions = self
+            .get_transactions_by_recipient_and_payer(address_a, address_b, limit * 2)
+            .await?;
+        let mut confirmed_transactions = Vec::new();
+        for transaction in candidate_transactions.into_iter().take(limit) {
+            match self.get_transaction_details(&transaction.signature).await {
+                Ok(tx_details) => {
+                    let transaction_info = TransactionInfo::from_encoded_transaction(
+                        &tx_details,
+                        &transaction.signature,
+                        "solana",
+                    );
+                    // Address A is the payer and Address B is the payer
+                    if Self::is_address_recipient_in_transaction(&transaction_info, address_a)
+                        && Self::is_address_payer_in_transaction(&transaction_info, address_b)
+                    {
+                        confirmed_transactions.push(transaction);
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
+        Ok(confirmed_transactions)
+    }
+
     /// Determine whether address A is the recipient in the transaction
     ///
     /// # Params
@@ -396,8 +438,8 @@ impl Trade {
     /// address - address to check
     ///
     /// # Returns
-    /// true - address B is the payee
-    /// false - address B is not the payee
+    /// true - address B is the payer
+    /// false - address B is not the payer
     fn is_address_payer_in_transaction(
         transaction_info: &TransactionInfo,
         address_b: &str,
@@ -406,44 +448,6 @@ impl Trade {
             return true;
         }
         false
-    }
-
-    /// transaction where address A is the payee and address B is the payee
-    ///
-    /// # Params
-    /// address_a - Recipient address
-    /// address_b - Payer address
-    /// limit - Maximum number of transactions returned
-    ///
-    pub async fn get_transactions_where_a_recipient_b_payer(
-        &self,
-        address_a: &str,
-        address_b: &str,
-        limit: usize,
-    ) -> UnifiedResult<Vec<RpcConfirmedTransactionStatusWithSignature>> {
-        let candidate_transactions = self
-            .get_transactions_by_recipient_and_payer(address_a, address_b, limit * 2)
-            .await?;
-        let mut confirmed_transactions = Vec::new();
-        for transaction in candidate_transactions.into_iter().take(limit) {
-            match self.get_transaction_details(&transaction.signature).await {
-                Ok(tx_details) => {
-                    let transaction_info = TransactionInfo::from_encoded_transaction(
-                        &tx_details,
-                        &transaction.signature,
-                        "solana",
-                    );
-                    // Address A is the payee and Address B is the payee
-                    if Self::is_address_recipient_in_transaction(&transaction_info, address_a)
-                        && Self::is_address_payer_in_transaction(&transaction_info, address_b)
-                    {
-                        confirmed_transactions.push(transaction);
-                    }
-                }
-                Err(_) => continue,
-            }
-        }
-        Ok(confirmed_transactions)
     }
 
     /// Quickly determine whether there is a payment relationship between two addresses (address B pays address A)
@@ -461,7 +465,7 @@ impl Trade {
         address_b: &str,
     ) -> UnifiedResult<Option<String>> {
         let transactions = self
-            .get_transactions_where_a_recipient_b_payer(address_a, address_b, 1)
+            .get_transactions_by_recipient_and_payer_strict(address_a, address_b, 1)
             .await?;
         if let Some(transaction) = transactions.first() {
             Ok(Some(transaction.signature.clone()))
@@ -486,7 +490,7 @@ impl Trade {
         time_range: Option<u64>,
     ) -> UnifiedResult<u64> {
         let transactions = self
-            .get_transactions_where_a_recipient_b_payer(address_a, address_b, 100)
+            .get_transactions_by_recipient_and_payer_strict(address_a, address_b, 100)
             .await?;
         let mut total_amount = 0u64;
         let now = std::time::SystemTime::now()
