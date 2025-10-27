@@ -1,8 +1,6 @@
 pub mod account;
-pub mod dex;
 pub mod global;
 pub mod message;
-pub mod price;
 pub mod scan;
 pub mod tool;
 pub mod trade;
@@ -17,7 +15,6 @@ use std::{str::FromStr, sync::Arc};
 
 use crate::{
     account::Account,
-    dex::raydium::{v2::RaydiumV2, v3::RaydiumV3},
     global::{
         SOLANA_ANKR_MAIN_NET_URL, SOLANA_DEV_NET_URL, SOLANA_OFFICIAL_MAIN_NET_URL,
         SOLANA_SERUM_MAIN_NET_URL, SOLANA_TEST_NET_URL,
@@ -184,12 +181,5 @@ impl Solana {
     /// create trade
     pub fn create_trade(&self) -> Trade {
         Trade::new(self.client_arc())
-    }
-    /// create raydium
-    pub fn create_raydium_v2(&self) -> RaydiumV2 {
-        RaydiumV2::new(self.client_arc())
-    }
-    pub fn create_raydium_v3(&self) -> RaydiumV3 {
-        RaydiumV3::new(self.client_arc())
     }
 }

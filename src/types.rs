@@ -5,3 +5,11 @@ pub enum Mode {
     TEST,
     DEV,
 }
+
+/// unified result
+pub type UnifiedResult<T> = Result<T, UnifiedError>;
+
+/// unified error
+pub enum UnifiedError {
+    Error(String),
+}
