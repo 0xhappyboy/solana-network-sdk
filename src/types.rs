@@ -7,10 +7,10 @@ pub enum Mode {
 }
 
 /// unified result
-pub type UnifiedResult<T> = Result<T, UnifiedError>;
+pub type UnifiedResult<T, E> = Result<T, UnifiedError<E>>;
 
 /// unified error
 #[derive(Debug)]
-pub enum UnifiedError {
-    Error(String),
+pub enum UnifiedError<T> {
+    Error(T),
 }

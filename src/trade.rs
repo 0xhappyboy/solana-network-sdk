@@ -75,10 +75,13 @@ impl Trade {
         address: &str,
         cursor: Option<String>,
         page_size: u32,
-    ) -> UnifiedResult<(
-        Vec<RpcConfirmedTransactionStatusWithSignature>,
-        Option<String>,
-    )> {
+    ) -> UnifiedResult<
+        (
+            Vec<RpcConfirmedTransactionStatusWithSignature>,
+            Option<String>,
+        ),
+        String,
+    > {
         match Pubkey::from_str(address) {
             Ok(address) => {
                 let before = match cursor {
@@ -139,7 +142,7 @@ impl Trade {
         client: &Arc<RpcClient>,
         address: &str,
         filter: F,
-    ) -> UnifiedResult<Vec<RpcConfirmedTransactionStatusWithSignature>>
+    ) -> UnifiedResult<Vec<RpcConfirmedTransactionStatusWithSignature>, String>
     where
         F: Fn(&RpcConfirmedTransactionStatusWithSignature) -> bool,
     {
@@ -196,7 +199,7 @@ impl Trade {
         &self,
         address_a: &str,
         address_b: &str,
-    ) -> UnifiedResult<Option<RpcConfirmedTransactionStatusWithSignature>> {
+    ) -> UnifiedResult<Option<RpcConfirmedTransactionStatusWithSignature>, String> {
         let all_transactions =
             Self::get_transactions_history_filtered(&self.client, address_a, |_| true).await?;
         if all_transactions.is_empty() {
@@ -240,7 +243,7 @@ impl Trade {
         &self,
         address_a: &str,
         address_b: &str,
-    ) -> UnifiedResult<Vec<RpcConfirmedTransactionStatusWithSignature>> {
+    ) -> UnifiedResult<Vec<RpcConfirmedTransactionStatusWithSignature>, String> {
         let all_transactions =
             Self::get_transactions_history_filtered(&self.client, address_a, |_| true).await?;
         if all_transactions.is_empty() {
@@ -273,7 +276,7 @@ impl Trade {
     pub async fn get_transaction_details(
         &self,
         signature: &str,
-    ) -> UnifiedResult<EncodedConfirmedTransactionWithStatusMeta> {
+    ) -> UnifiedResult<EncodedConfirmedTransactionWithStatusMeta, String> {
         let signature = match Signature::from_str(&signature) {
             Ok(signature) => signature,
             Err(_) => todo!(),
@@ -318,7 +321,7 @@ impl Trade {
         address_a: &str,
         address_b: &str,
         limit: usize,
-    ) -> UnifiedResult<Vec<RpcConfirmedTransactionStatusWithSignature>> {
+    ) -> UnifiedResult<Vec<RpcConfirmedTransactionStatusWithSignature>, String> {
         let all_transactions =
             Self::get_transactions_history_filtered(&self.client, address_a, |_| true).await?;
         let mut matching_transactions = Vec::new();
@@ -364,7 +367,7 @@ impl Trade {
         address_a: &str,
         address_b: &str,
         limit: usize,
-    ) -> UnifiedResult<Vec<RpcConfirmedTransactionStatusWithSignature>> {
+    ) -> UnifiedResult<Vec<RpcConfirmedTransactionStatusWithSignature>, String> {
         let candidate_transactions = self
             .get_transactions_by_recipient_and_payer(address_a, address_b, limit * 2)
             .await?;
@@ -463,7 +466,7 @@ impl Trade {
         &self,
         address_a: &str,
         address_b: &str,
-    ) -> UnifiedResult<Option<String>> {
+    ) -> UnifiedResult<Option<String>, String> {
         let transactions = self
             .get_transactions_by_recipient_and_payer_strict(address_a, address_b, 1)
             .await?;
@@ -488,7 +491,7 @@ impl Trade {
         address_a: &str,
         address_b: &str,
         time_range: Option<u64>,
-    ) -> UnifiedResult<u64> {
+    ) -> UnifiedResult<u64, String> {
         let transactions = self
             .get_transactions_by_recipient_and_payer_strict(address_a, address_b, 100)
             .await?;
