@@ -3680,7 +3680,7 @@ dependencies = [
 
 [[package]]
 name = "solana-network-sdk"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "bs58",
  "bytemuck",
