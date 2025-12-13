@@ -13,3 +13,26 @@ Implemented most of the commonly used practical transaction-related functions on
 <p align="center">
 <a href="./README_zh-CN.md">简体中文</a> | <a href="./README.md">English</a>
 </p>
+
+# 🏗️ Depend
+
+```shell
+cargo add solana-network-sdk
+```
+
+# 📦 Example
+
+## Create Client
+
+```rust
+use solana_network_sdk::Solana;
+use solana_network_sdk::types::Mode;
+
+#[tokio::main]
+async fn main() -> Result<(), String> {
+    let solana = solana_network_sdk::Solana::new(solana_network_sdk::types::Mode::MAIN)
+                .map_err(|e| format!("create solane clietn error:{:?}", e))
+                .unwrap()
+}
+
+```
