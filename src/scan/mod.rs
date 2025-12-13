@@ -1,3 +1,4 @@
+use crate::global::{SOL, USDC, USDT};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use solana_client::{
@@ -6,60 +7,35 @@ use solana_client::{
 };
 use solana_sdk::{pubkey::Pubkey, signature::Signature};
 use solana_transaction_status::{
-    EncodedConfirmedTransactionWithStatusMeta, UiInstruction, UiParsedInstruction,
-    UiTransactionEncoding, option_serializer::OptionSerializer,
+    EncodedConfirmedTransactionWithStatusMeta, UiTransactionEncoding,
+    option_serializer::OptionSerializer,
 };
 use std::collections::HashMap;
-use std::io::Write;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use crate::Solana;
-use crate::global::{SOL, USDC, USDT};
-use crate::types::Mode;
-
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TokenTradeRecord {
-    
     pub signature: String,
-    
     pub block_time: i64,
-    
     pub slot: u64,
-    
     pub trade_type: String,
-    
     pub token_mint: String,
-    
     pub from: Option<String>,
-    
     pub to: Option<String>,
-    
     pub base_amount: f64,
     pub base_address: Option<String>,
-    
     pub quote_amount: f64,
     pub quote_address: Option<String>,
-    
     pub base_decimals: u8,
-    
     pub quote_decimals: Option<u8>,
-    
     pub quote_mint: Option<String>,
-    
     pub is_dex: bool,
-    
     pub dex_program: Option<String>,
-    
     pub input_mint: Option<String>,
-    
     pub output_mint: Option<String>,
-    
     pub fee: u64,
-    
     pub status: String,
-    
     pub side: Option<String>,
 }
 
@@ -68,7 +44,6 @@ pub struct Scan {
 }
 
 impl Scan {
-    
     pub fn new(client: Arc<RpcClient>) -> Self {
         Self { client }
     }
@@ -106,7 +81,7 @@ impl Scan {
                 break;
             }
             tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-            
+
             if all_records.len() >= 10 {
                 break;
             }
@@ -114,7 +89,6 @@ impl Scan {
         Ok(all_records)
     }
 
-    
     async fn fetch_token_signatures(
         &self,
         mint_pubkey: &Pubkey,
@@ -123,7 +97,7 @@ impl Scan {
         let config = GetConfirmedSignaturesForAddress2Config {
             before,
             until: None,
-            limit: Some(100), 
+            limit: Some(100),
             commitment: None,
         };
         match self
@@ -135,7 +109,7 @@ impl Scan {
             Err(e) => Err(e.into()),
         }
     }
-    
+
     async fn parse_transactions(
         &self,
         signatures: &[RpcConfirmedTransactionStatusWithSignature],
@@ -164,7 +138,7 @@ impl Scan {
         }
         Ok(records)
     }
-    
+
     async fn fetch_transaction_detail(
         &self,
         signature: &str,
@@ -182,7 +156,6 @@ impl Scan {
         Ok(tx)
     }
 
-    
     async fn parse_transaction_to_record(
         &self,
         tx: &EncodedConfirmedTransactionWithStatusMeta,
@@ -248,7 +221,6 @@ impl Scan {
         Some(record)
     }
 
-    
     fn parse_token_transfer_info(
         &self,
         record: &mut TokenTradeRecord,
@@ -368,15 +340,12 @@ impl Scan {
         }
     }
 
-    
-    
     fn parse_dex_swap_info(
         &self,
         record: &mut TokenTradeRecord,
         meta: &solana_transaction_status::UiTransactionStatusMeta,
         token_mint: &str,
     ) {
-        
         let (pre_balances, post_balances) =
             match (&meta.pre_token_balances, &meta.post_token_balances) {
                 (OptionSerializer::Some(pre), OptionSerializer::Some(post)) => (pre, post),
@@ -384,11 +353,8 @@ impl Scan {
                     return;
                 }
             };
-
-        
         let mut base_change = 0i64;
         let mut base_decimals = 0u8;
-
         for balance in pre_balances {
             if balance.mint == token_mint {
                 let pre_amount: i64 = balance.ui_token_amount.amount.parse().unwrap_or(0);
@@ -407,7 +373,6 @@ impl Scan {
                 }
             }
         }
-
         if base_change == 0 {
             for post_balance in post_balances {
                 if post_balance.mint == token_mint {
@@ -432,13 +397,10 @@ impl Scan {
                 }
             }
         }
-
         if base_change != 0 {
             record.base_decimals = base_decimals;
             record.base_amount =
                 (base_change.abs() as f64) / (10u64.pow(base_decimals as u32)) as f64;
-
-            
             if base_change > 0 {
                 record.from = Some("dex".to_string());
                 record.to = Some("user".to_string());
@@ -451,11 +413,8 @@ impl Scan {
                 record.side = Some("sell".to_string());
             }
         }
-
-        
         let mut pre_map = HashMap::new();
         let mut post_map = HashMap::new();
-
         for balance in pre_balances {
             let owner = match &balance.owner {
                 OptionSerializer::Some(owner) => owner.clone(),
@@ -465,7 +424,6 @@ impl Scan {
             let amount = balance.ui_token_amount.amount.parse::<u64>().unwrap_or(0);
             pre_map.insert(key, amount);
         }
-
         for balance in post_balances {
             let owner = match &balance.owner {
                 OptionSerializer::Some(owner) => owner.clone(),
@@ -475,51 +433,37 @@ impl Scan {
             let amount = balance.ui_token_amount.amount.parse::<u64>().unwrap_or(0);
             post_map.insert(key, amount);
         }
-
-        
         let mut best_quote_change = 0i64;
         let mut best_quote_mint = None;
         let mut best_quote_decimals = None;
-
-        
         let common_quote_mints = [
-            (USDC.to_string(), 6), 
-            (USDT.to_string(), 6), 
-            (SOL.to_string(), 9),  
+            (USDC.to_string(), 6),
+            (USDT.to_string(), 6),
+            (SOL.to_string(), 9),
         ];
-
         for (mint_addr, decimals) in &common_quote_mints {
             if *mint_addr == token_mint {
-                continue; 
+                continue;
             }
-
-            
             let mut total_change: i64 = 0;
-
-            
             let mut all_keys = Vec::new();
             for key in pre_map.keys().chain(post_map.keys()) {
                 if key.0 == *mint_addr && !all_keys.contains(key) {
                     all_keys.push(key.clone());
                 }
             }
-
             for key in all_keys {
                 let pre_amount = pre_map.get(&key).unwrap_or(&0);
                 let post_amount = post_map.get(&key).unwrap_or(&0);
                 let change = *post_amount as i64 - *pre_amount as i64;
                 total_change += change;
             }
-
-            
             if total_change.abs() > best_quote_change.abs() && total_change != 0 {
                 best_quote_change = total_change;
                 best_quote_mint = Some(mint_addr.clone());
                 best_quote_decimals = Some(*decimals);
             }
         }
-
-        
         if best_quote_change == 0 {
             if let OptionSerializer::Some(logs) = &meta.log_messages {
                 for log in logs {
