@@ -6,6 +6,7 @@ pub mod tool;
 pub mod trade;
 pub mod types;
 pub mod wallet;
+pub mod pyth;
 
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{epoch_info::EpochInfo, native_token::LAMPORTS_PER_SOL, pubkey::Pubkey};
