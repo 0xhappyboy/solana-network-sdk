@@ -14,3 +14,10 @@ pub type UnifiedResult<T, E> = Result<T, UnifiedError<E>>;
 pub enum UnifiedError<T> {
     Error(T),
 }
+
+#[derive(Debug, Clone, Copy)]
+
+pub enum Direction {
+    In,
+    Out,
+}

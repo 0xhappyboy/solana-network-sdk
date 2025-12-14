@@ -17,7 +17,11 @@ use solana_transaction_status::{
     UiParsedInstruction, UiTransactionEncoding, UiTransactionTokenBalance,
 };
 
-use crate::types::{UnifiedError, UnifiedResult};
+use crate::global::{
+    PUMP_AAM_PROGRAM_ID, PUMP_BOND_CURVE_PROGRAM_ID, RAYDIUM_CPMM_POOL_PROGRAM_ID,
+    RAYDIUM_V4_POOL_PROGRAM_ID,
+};
+use crate::types::{Direction, UnifiedError, UnifiedResult};
 
 pub struct Trade {
     client: Arc<RpcClient>,
@@ -262,43 +266,6 @@ impl Trade {
         Ok(matching_transactions)
     }
 
-    /// get transaction details
-    ///
-    /// # params
-    /// signature - transaction signature hash string
-    ///
-    /// # Example
-    /// ```rust
-    /// let solana = Solana::new(solana_trader::types::Mode::DEV).unwrap();
-    /// let trade = solana.create_trade();
-    /// let transaction_info = trade.get_transaction_details("transaction signature").await;
-    /// ```
-    pub async fn get_transaction_details(
-        &self,
-        signature: &str,
-    ) -> UnifiedResult<EncodedConfirmedTransactionWithStatusMeta, String> {
-        let signature = match Signature::from_str(&signature) {
-            Ok(signature) => signature,
-            Err(_) => todo!(),
-        };
-        let config = RpcTransactionConfig {
-            encoding: Some(UiTransactionEncoding::Json),
-            commitment: None,
-            max_supported_transaction_version: Some(0),
-        };
-        match self
-            .client
-            .get_transaction_with_config(&signature, config)
-            .await
-        {
-            Ok(transaction) => Ok(transaction),
-            Err(_e) => {
-                // get tade info error
-                Err(UnifiedError::Error("get tade info error".to_string()))
-            }
-        }
-    }
-
     /// get the transaction record with address A as the payer and address B included
     /// loose filtering: Address A is the payer and the transaction contains address B (not necessarily the payer)
     /// address B only needs to appear in the transaction (may be the payer, payer, signer)
@@ -341,7 +308,6 @@ impl Trade {
                     let transaction_info = TransactionInfo::from_encoded_transaction(
                         &tx_details,
                         &transaction.signature,
-                        "solana",
                     );
                     if Self::is_address_recipient_in_transaction(&transaction_info, address_a) {
                         matching_transactions.push(transaction);
@@ -378,7 +344,6 @@ impl Trade {
                     let transaction_info = TransactionInfo::from_encoded_transaction(
                         &tx_details,
                         &transaction.signature,
-                        "solana",
                     );
                     // Address A is the payer and Address B is the payer
                     if Self::is_address_recipient_in_transaction(&transaction_info, address_a)
@@ -506,7 +471,6 @@ impl Trade {
                     let transaction_info = TransactionInfo::from_encoded_transaction(
                         &tx_details,
                         &transaction.signature,
-                        "solana",
                     );
                     if let Some(range) = time_range {
                         if let Some(block_time) = transaction_info.block_time {
@@ -534,6 +498,68 @@ impl Trade {
             }
             Err(_) => false,
         }
+    }
+
+    /// get transaction details
+    ///
+    /// # params
+    /// signature - transaction signature hash string
+    ///
+    /// # Example
+    /// ```rust
+    /// let solana = Solana::new(solana_trader::types::Mode::DEV).unwrap();
+    /// let trade = solana.create_trade();
+    /// let transaction_info = trade.get_transaction_details("transaction signature").await;
+    /// ```
+    pub async fn get_transaction_details(
+        &self,
+        signature: &str,
+    ) -> UnifiedResult<EncodedConfirmedTransactionWithStatusMeta, String> {
+        let signature = match Signature::from_str(&signature) {
+            Ok(signature) => signature,
+            Err(_) => todo!(),
+        };
+        let config = RpcTransactionConfig {
+            encoding: Some(UiTransactionEncoding::Json),
+            commitment: None,
+            max_supported_transaction_version: Some(0),
+        };
+        match self
+            .client
+            .get_transaction_with_config(&signature, config)
+            .await
+        {
+            Ok(transaction) => Ok(transaction),
+            Err(_e) => {
+                // get tade info error
+                Err(UnifiedError::Error("get tade info error".to_string()))
+            }
+        }
+    }
+
+    /// get transaction details
+    ///
+    /// # params
+    /// signature - transaction signature hash string
+    ///
+    /// # Example
+    /// ```rust
+    /// let solana = Solana::new(solana_trader::types::Mode::DEV).unwrap();
+    /// let trade = solana.create_trade();
+    /// let transaction_info = trade.get_transaction_details("transaction signature").await;
+    /// ```
+    pub async fn get_transaction_display_details(
+        &self,
+        signature: &str,
+    ) -> UnifiedResult<TransactionInfo, String> {
+        Ok(TransactionInfo::from_encoded_transaction(
+            &self
+                .get_transaction_details(signature)
+                .await
+                .map_err(|e| format!("get transaction details error {:?}", e))
+                .unwrap(),
+            signature,
+        ))
     }
 }
 
@@ -603,11 +629,14 @@ pub struct TransactionInfo {
     pub nft_symbol: Option<String>,
     // DEX/DeFi Related
     pub is_swap: bool,
-    pub dex_program: Option<String>, // DEX program ID
-    pub input_mint: Option<String>,  // Input token mint
-    pub output_mint: Option<String>, // Output token mint
-    pub input_amount: Option<u64>,   // Input amount
-    pub output_amount: Option<u64>,  // Output amount
+    pub dex_program_id: Option<String>,        // DEX program id
+    pub dex_program_name: Option<String>,      // DEX program name
+    pub dex_pool_program_id: Option<String>,   // DEX program pool id
+    pub dex_pool_program_name: Option<String>, // DEX program pool name
+    pub input_mint: Option<String>,            // Input token mint
+    pub output_mint: Option<String>,           // Output token mint
+    pub input_amount: Option<u64>,             // Input amount
+    pub output_amount: Option<u64>,            // Output amount
     // Business Extension Fields
     pub memo: Option<String>,
     pub timestamp: Option<u64>,
@@ -620,7 +649,6 @@ pub struct TransactionInfo {
     pub max_fee: Option<u64>,      // Maximum fee
     pub priority_fee: Option<u64>, // Priority fee
     // Network Related
-    pub network: String,  // "mainnet", "testnet", "devnet"
     pub cluster: String,  // Cluster information
     pub rpc_node: String, // RPC node information
     // Metadata
@@ -628,13 +656,15 @@ pub struct TransactionInfo {
     pub updated_at: u64, // Record update timestamp
     pub source: String,  // Data source
     pub confidence: f64, // Data confidence level 0.0-1.0
+
+    // trade direction
+    pub direction: Option<Direction>,
 }
 
 impl TransactionInfo {
     pub fn from_encoded_transaction(
         tx: &EncodedConfirmedTransactionWithStatusMeta,
         signature: &str,
-        network: &str,
     ) -> Self {
         let mut info = Self::default();
         info.transaction_hash = signature.to_string();
@@ -664,7 +694,16 @@ impl TransactionInfo {
             };
         }
         Self::parse_transaction_content(&mut info, tx);
-        info.network = network.to_string();
+        // trading direction calculation
+        if info.from != "unknown" && info.to != "unknown" {
+            if info.balance_change > 0 {
+                // In DEX trading, "in" means buying (you receive tokens and pay SOL).
+                info.direction = Some(Direction::In);
+            } else if info.balance_change < 0 {
+                // In DEX trading, "out" means selling (you pay tokens and receive SOL).
+                info.direction = Some(Direction::Out);
+            }
+        }
         info.created_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -947,7 +986,6 @@ impl TransactionInfo {
                         }
                     }
                 }
-
                 match &meta.loaded_addresses {
                     OptionSerializer::Some(loaded_addresses) => {
                         info.writable_accounts = loaded_addresses
@@ -966,7 +1004,6 @@ impl TransactionInfo {
                         info.readonly_accounts = Vec::new();
                     }
                 }
-
                 // Collect all involved accounts
                 let mut all_accounts = Vec::new();
                 all_accounts.extend(info.writable_accounts.clone());
@@ -1084,6 +1121,10 @@ impl TransactionInfo {
     ) {
         if let logs = &meta.log_messages {
             let dex_keywords = [
+                "Buy",
+                "buy",
+                "Sell",
+                "sell",
                 "swap",
                 "Swap",
                 "liquidity",
@@ -1101,20 +1142,91 @@ impl TransactionInfo {
                 "trade",
                 "Trade",
                 "Pump",
+                "pump",
                 "Pumpswap",
+                "pumpswap",
+                "pump.fun",
+                "Pump.fun",
             ];
+            // dex
             for log in logs.clone().unwrap_or(vec![]) {
                 if dex_keywords.iter().any(|&keyword| log.contains(keyword)) {
-                    info.is_swap = true;
-                    info.transaction_type = "swap".to_string();
-                    if log.contains("raydium") || log.contains("Raydium") {
-                        info.dex_program = Some("Raydium".to_string());
-                    } else if log.contains("orca") || log.contains("Orca") {
-                        info.dex_program = Some("Orca".to_string());
-                    } else if log.contains("serum") || log.contains("Serum") {
-                        info.dex_program = Some("Serum".to_string());
+                    if (!info.is_swap) {
+                        info.is_swap = true;
                     }
-                    break;
+                    if (info.transaction_type.is_empty()) {
+                        info.transaction_type = "swap".to_string();
+                    }
+                }
+            }
+            // raydium
+            for log in logs.clone().unwrap_or(vec![]) {
+                if log.contains("raydium") || log.contains("Raydium") {
+                    info.dex_program_name = Some("raydium".to_string());
+                    // pool
+                    for log in logs.clone().unwrap_or(vec![]) {
+                        if log.contains(RAYDIUM_V4_POOL_PROGRAM_ID) {
+                            info.dex_program_id = Some(RAYDIUM_V4_POOL_PROGRAM_ID.to_string());
+                            info.dex_pool_program_id = Some(RAYDIUM_V4_POOL_PROGRAM_ID.to_string());
+                            info.dex_pool_program_name = Some("raydium-v4-poll".to_string());
+                        }
+                        if log.contains(RAYDIUM_CPMM_POOL_PROGRAM_ID) {
+                            info.dex_program_id = Some(RAYDIUM_CPMM_POOL_PROGRAM_ID.to_string());
+                            info.dex_pool_program_id =
+                                Some(RAYDIUM_CPMM_POOL_PROGRAM_ID.to_string());
+                            info.dex_pool_program_name = Some("raydium-cpmm-poll".to_string());
+                        }
+                    }
+                    return;
+                }
+                if log.contains("orca") || log.contains("Orca") {
+                    info.dex_program_name = Some("orca".to_string());
+                    return;
+                }
+                if log.contains("serum") || log.contains("Serum") {
+                    info.dex_program_name = Some("serum".to_string());
+                    return;
+                }
+            }
+            // pump
+            let pump_keywords = [
+                "Buy",
+                "buy",
+                "Sell",
+                "sell",
+                "swap",
+                "Swap",
+                "liquidity",
+                "Liquidity",
+                "pool",
+                "Pool",
+                "Pump",
+                "pump",
+                "Pumpswap",
+                "pumpswap",
+                "pump.fun",
+                "Pump.fun",
+            ];
+            for log in logs.clone().unwrap_or(vec![]) {
+                if pump_keywords.iter().any(|&keyword| log.contains(keyword)) {
+                    if (!info.is_swap) {
+                        info.is_swap = true;
+                    }
+                    if (info.transaction_type.is_empty()) {
+                        info.transaction_type = "swap".to_string();
+                    }
+                }
+            }
+            for log in logs.clone().unwrap_or(vec![]) {
+                if log.contains(PUMP_AAM_PROGRAM_ID) {
+                    info.dex_program_id = Some(PUMP_AAM_PROGRAM_ID.to_string());
+                    info.dex_program_name = Some("pump-aam".to_string());
+                    return;
+                }
+                if log.contains(PUMP_BOND_CURVE_PROGRAM_ID) {
+                    info.dex_program_id = Some(PUMP_BOND_CURVE_PROGRAM_ID.to_string());
+                    info.dex_program_name = Some("pump-bond-curve".to_string());
+                    return;
                 }
             }
         }
@@ -1421,7 +1533,12 @@ impl Default for TransactionInfo {
             nft_name: None,
             nft_symbol: None,
             is_swap: false,
-            dex_program: None,
+
+            dex_program_id: None,        // DEX program id
+            dex_program_name: None,      // DEX program name
+            dex_pool_program_id: None,   // DEX program pool id
+            dex_pool_program_name: None, // DEX program pool name
+
             input_mint: None,
             output_mint: None,
             input_amount: None,
@@ -1436,13 +1553,13 @@ impl Default for TransactionInfo {
             gas_price: None,
             max_fee: None,
             priority_fee: None,
-            network: "mainnet".to_string(),
             cluster: String::new(),
             rpc_node: String::new(),
             created_at: 0,
             updated_at: 0,
             source: "rpc".to_string(),
             confidence: 1.0,
+            direction: None,
         }
     }
 }
