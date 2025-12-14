@@ -565,7 +565,7 @@ impl Trade {
 }
 
 /// a more readable transaction information structure.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TransactionInfo {
     // Basic Identification Fields
     pub transaction_hash: String,
@@ -573,6 +573,7 @@ pub struct TransactionInfo {
     // Account Related Fields
     pub from: String,
     pub to: String,
+    pub signer: String,
     pub fee_payer: String,
     pub signers: Vec<String>,           // All signers
     pub involved_accounts: Vec<String>, // All involved accounts
@@ -976,6 +977,7 @@ impl TransactionInfo {
                                 if let Some(fee_payer) = account_keys.get(0) {
                                     if let pubkey = &fee_payer.pubkey {
                                         info.fee_payer = pubkey.clone();
+                                        info.signer = pubkey.clone();
                                     }
                                 }
                             }
@@ -983,6 +985,7 @@ impl TransactionInfo {
                         UiMessage::Raw(raw_msg) => {
                             if let Some(fee_payer) = raw_msg.account_keys.get(0) {
                                 info.fee_payer = fee_payer.to_string();
+                                info.signer = fee_payer.clone();
                             }
                         }
                     }
@@ -1582,6 +1585,7 @@ impl Default for TransactionInfo {
             signature: String::new(),
             from: String::new(),
             to: String::new(),
+            signer: String::new(),
             fee_payer: String::new(),
             signers: Vec::new(),
             involved_accounts: Vec::new(),
