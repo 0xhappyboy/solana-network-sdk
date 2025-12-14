@@ -13,10 +13,21 @@ pub const RAY: &'static str = "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R";
 
 /// raydium v4 pool program id
 pub const RAYDIUM_V4_POOL_PROGRAM_ID: &'static str = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8";
-/// raydium cpmm poll program id
+/// raydium cpmm pool program id
 pub const RAYDIUM_CPMM_POOL_PROGRAM_ID: &'static str =
     "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C";
+/// raydium clmm pool program id
+pub const RAYDIUM_CLMM_POOL_PROGRAM_ID: &'static str =
+    "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK";
 /// pump aam program id
 pub const PUMP_AAM_PROGRAM_ID: &'static str = "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA";
 /// pump.fun bond curve program id
 pub const PUMP_BOND_CURVE_PROGRAM_ID: &'static str = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P";
+/// meteora damm v2 pool program id
+pub const METEORA_DAMM_V2_PROGRAM_ID: &'static str = "cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG";
+/// meteora dlmm v2 pool program id
+pub const METEORA_DLMM_V2_PROGRAM_ID: &'static str = "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo";
+/// meteora pool program id
+pub const METEORA_POOL_PROGRAM_ID: &'static str = "Eo7WjKq67rjJQSZxS6z3YkapzY3eMj6Xy8X5EQVn5UaB";
+/// orca whirlpools program id
+pub const ORCA_WHIRLPOOLS_PROGRAM_ID: &'static str = "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc";

@@ -18,8 +18,9 @@ use solana_transaction_status::{
 };
 
 use crate::global::{
-    PUMP_AAM_PROGRAM_ID, PUMP_BOND_CURVE_PROGRAM_ID, RAYDIUM_CPMM_POOL_PROGRAM_ID,
-    RAYDIUM_V4_POOL_PROGRAM_ID,
+    METEORA_DAMM_V2_PROGRAM_ID, METEORA_DLMM_V2_PROGRAM_ID, METEORA_POOL_PROGRAM_ID,
+    ORCA_WHIRLPOOLS_PROGRAM_ID, PUMP_AAM_PROGRAM_ID, PUMP_BOND_CURVE_PROGRAM_ID,
+    RAYDIUM_CLMM_POOL_PROGRAM_ID, RAYDIUM_CPMM_POOL_PROGRAM_ID, RAYDIUM_V4_POOL_PROGRAM_ID,
 };
 use crate::types::{Direction, UnifiedError, UnifiedResult};
 
@@ -1038,7 +1039,6 @@ impl TransactionInfo {
                 _ => {}
             }
         }
-        Self::check_swap_transaction(info, meta);
     }
 
     // check token transfers
@@ -1147,6 +1147,8 @@ impl TransactionInfo {
                 "pumpswap",
                 "pump.fun",
                 "Pump.fun",
+                "meteora",
+                "Meteora",
             ];
             // dex
             for log in logs.clone().unwrap_or(vec![]) {
@@ -1154,37 +1156,131 @@ impl TransactionInfo {
                     if (!info.is_swap) {
                         info.is_swap = true;
                     }
-                    if (info.transaction_type.is_empty()) {
-                        info.transaction_type = "swap".to_string();
-                    }
                 }
             }
-            // raydium
             for log in logs.clone().unwrap_or(vec![]) {
-                if log.contains("raydium") || log.contains("Raydium") {
+                // raydium
+                if log.contains(RAYDIUM_V4_POOL_PROGRAM_ID)
+                    || log.contains(RAYDIUM_CPMM_POOL_PROGRAM_ID)
+                    || log.contains(RAYDIUM_CLMM_POOL_PROGRAM_ID)
+                {
                     info.dex_program_name = Some("raydium".to_string());
                     // pool
                     for log in logs.clone().unwrap_or(vec![]) {
                         if log.contains(RAYDIUM_V4_POOL_PROGRAM_ID) {
                             info.dex_program_id = Some(RAYDIUM_V4_POOL_PROGRAM_ID.to_string());
                             info.dex_pool_program_id = Some(RAYDIUM_V4_POOL_PROGRAM_ID.to_string());
-                            info.dex_pool_program_name = Some("raydium-v4-poll".to_string());
+                            info.dex_pool_program_name = Some("raydium-v4-pool".to_string());
+                            info.transaction_type = "swap".to_string();
+                            for log in logs.clone().unwrap_or(vec![]) {
+                                if (log.contains("MintTo")) {
+                                    info.transaction_type = "addLiquidity".to_string();
+                                }
+                                if (log.contains("Burn")) {
+                                    info.transaction_type = "removeLiquidity".to_string();
+                                }
+                            }
                         }
                         if log.contains(RAYDIUM_CPMM_POOL_PROGRAM_ID) {
                             info.dex_program_id = Some(RAYDIUM_CPMM_POOL_PROGRAM_ID.to_string());
                             info.dex_pool_program_id =
                                 Some(RAYDIUM_CPMM_POOL_PROGRAM_ID.to_string());
-                            info.dex_pool_program_name = Some("raydium-cpmm-poll".to_string());
+                            info.dex_pool_program_name = Some("raydium-cpmm-pool".to_string());
+                            info.transaction_type = "swap".to_string();
+                            for log in logs.clone().unwrap_or(vec![]) {
+                                if (log.contains("MintTo")) {
+                                    info.transaction_type = "addLiquidity".to_string();
+                                }
+                                if (log.contains("Burn")) {
+                                    info.transaction_type = "removeLiquidity".to_string();
+                                }
+                            }
+                        }
+                        if log.contains(RAYDIUM_CLMM_POOL_PROGRAM_ID) {
+                            info.dex_program_id = Some(RAYDIUM_CLMM_POOL_PROGRAM_ID.to_string());
+                            info.dex_pool_program_id =
+                                Some(RAYDIUM_CLMM_POOL_PROGRAM_ID.to_string());
+                            info.dex_pool_program_name = Some("raydium-clmm-pool".to_string());
+                            info.transaction_type = "swap".to_string();
+                            for log in logs.clone().unwrap_or(vec![]) {
+                                if (log.contains("IncreaseLiquidityV2")) {
+                                    info.transaction_type = "addLiquidity".to_string();
+                                }
+                                if (log.contains("Burn")) {
+                                    info.transaction_type = "removeLiquidity".to_string();
+                                }
+                            }
                         }
                     }
                     return;
                 }
-                if log.contains("orca") || log.contains("Orca") {
-                    info.dex_program_name = Some("orca".to_string());
+                if log.contains(METEORA_DAMM_V2_PROGRAM_ID)
+                    || log.contains(METEORA_DLMM_V2_PROGRAM_ID)
+                    || log.contains(METEORA_POOL_PROGRAM_ID)
+                {
+                    info.dex_program_name = Some("meteora".to_string());
+                    info.transaction_type = "swap".to_string();
+                    // pool
+                    for log in logs.clone().unwrap_or(vec![]) {
+                        if log.contains(METEORA_DAMM_V2_PROGRAM_ID) {
+                            info.dex_program_id = Some(METEORA_DAMM_V2_PROGRAM_ID.to_string());
+                            info.dex_pool_program_id = Some(METEORA_DAMM_V2_PROGRAM_ID.to_string());
+                            info.dex_pool_program_name = Some("meteora-damm-v2-pool".to_string());
+                            info.transaction_type = "swap".to_string();
+                            for log in logs.clone().unwrap_or(vec![]) {
+                                if (log.contains("AddLiquidity")) {
+                                    info.transaction_type = "addLiquidity".to_string();
+                                }
+                                if (log.contains("RemoveLiquidity")) {
+                                    info.transaction_type = "removeLiquidity".to_string();
+                                }
+                            }
+                        }
+                    }
+                    for log in logs.clone().unwrap_or(vec![]) {
+                        if log.contains(METEORA_DLMM_V2_PROGRAM_ID) {
+                            info.dex_program_id = Some(METEORA_DLMM_V2_PROGRAM_ID.to_string());
+                            info.dex_pool_program_id = Some(METEORA_DLMM_V2_PROGRAM_ID.to_string());
+                            info.dex_pool_program_name = Some("meteora-dlmm-v2-pool".to_string());
+                            info.transaction_type = "swap".to_string();
+                        }
+                    }
+                    for log in logs.clone().unwrap_or(vec![]) {
+                        if log.contains(METEORA_POOL_PROGRAM_ID) {
+                            info.dex_program_id = Some(METEORA_POOL_PROGRAM_ID.to_string());
+                            info.dex_pool_program_id = Some(METEORA_POOL_PROGRAM_ID.to_string());
+                            info.dex_pool_program_name = Some("meteora-pool".to_string());
+                            info.transaction_type = "swap".to_string();
+                            for log in logs.clone().unwrap_or(vec![]) {
+                                if (log.contains("AddBalanceLiquidity")) {
+                                    info.transaction_type = "addLiquidity".to_string();
+                                }
+                                if (log.contains("RemoveBalanceLiquidity")) {
+                                    info.transaction_type = "removeLiquidity".to_string();
+                                }
+                            }
+                        }
+                    }
                     return;
                 }
-                if log.contains("serum") || log.contains("Serum") {
-                    info.dex_program_name = Some("serum".to_string());
+                if log.contains(ORCA_WHIRLPOOLS_PROGRAM_ID) {
+                    info.dex_program_name = Some("orca".to_string());
+                    for log in logs.clone().unwrap_or(vec![]) {
+                        if log.contains(ORCA_WHIRLPOOLS_PROGRAM_ID) {
+                            info.dex_program_id = Some(ORCA_WHIRLPOOLS_PROGRAM_ID.to_string());
+                            info.dex_pool_program_id = Some(ORCA_WHIRLPOOLS_PROGRAM_ID.to_string());
+                            info.dex_pool_program_name = Some("orca-whirl-pools".to_string());
+                            info.transaction_type = "swap".to_string();
+                            for log in logs.clone().unwrap_or(vec![]) {
+                                if (log.contains("IncreaseLiquidity")) {
+                                    info.transaction_type = "addLiquidity".to_string();
+                                }
+                                if (log.contains("DecreaseLiquidity")) {
+                                    info.transaction_type = "removeLiquidity".to_string();
+                                }
+                            }
+                        }
+                    }
                     return;
                 }
             }
@@ -1212,43 +1308,44 @@ impl TransactionInfo {
                     if (!info.is_swap) {
                         info.is_swap = true;
                     }
-                    if (info.transaction_type.is_empty()) {
-                        info.transaction_type = "swap".to_string();
-                    }
                 }
             }
             for log in logs.clone().unwrap_or(vec![]) {
                 if log.contains(PUMP_AAM_PROGRAM_ID) {
                     info.dex_program_id = Some(PUMP_AAM_PROGRAM_ID.to_string());
                     info.dex_program_name = Some("pump-aam".to_string());
+                    info.transaction_type = "swap".to_string();
+                    let mut deposit: bool = false;
+                    let mut mintTo: bool = false;
+                    let mut burn: bool = false;
+                    let mut withdraw: bool = false;
+                    for log in logs.clone().unwrap_or(vec![]) {
+                        if (log.contains("Instruction: Deposit")) {
+                            deposit = true;
+                        }
+                        if (log.contains("Instruction: MintTo")) {
+                            mintTo = true
+                        }
+                        if (log.contains("Instruction: Burn")) {
+                            burn = true;
+                        }
+                        if (log.contains("Instruction: Withdraw")) {
+                            withdraw = true
+                        }
+                    }
+                    if (deposit && mintTo) {
+                        info.transaction_type = "addLiquidity".to_string();
+                    }
+                    if (burn && withdraw) {
+                        info.transaction_type = "removeLiquidity".to_string();
+                    }
                     return;
                 }
                 if log.contains(PUMP_BOND_CURVE_PROGRAM_ID) {
                     info.dex_program_id = Some(PUMP_BOND_CURVE_PROGRAM_ID.to_string());
                     info.dex_program_name = Some("pump-bond-curve".to_string());
-                    return;
-                }
-            }
-        }
-    }
-
-    /// check swap transaction
-    fn check_swap_transaction(
-        info: &mut TransactionInfo,
-        meta: &solana_transaction_status::UiTransactionStatusMeta,
-    ) {
-        if let logs = &meta.log_messages.clone().unwrap_or(vec![]) {
-            if logs.iter().any(|log| {
-                log.contains("swap")
-                    || log.contains("Swap")
-                    || log.contains("exchange")
-                    || log.contains("Exchange")
-            }) {
-                info.is_swap = true;
-                if info.transaction_type != "token_transfer"
-                    && info.transaction_type != "nft_transfer"
-                {
                     info.transaction_type = "swap".to_string();
+                    return;
                 }
             }
         }
