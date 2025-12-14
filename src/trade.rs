@@ -1100,8 +1100,9 @@ impl TransactionInfo {
                 "Market",
                 "trade",
                 "Trade",
+                "Pump",
+                "Pumpswap",
             ];
-
             for log in logs.clone().unwrap_or(vec![]) {
                 if dex_keywords.iter().any(|&keyword| log.contains(keyword)) {
                     info.is_swap = true;
