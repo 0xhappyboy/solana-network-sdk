@@ -664,6 +664,318 @@ pub struct TransactionInfo {
 }
 
 impl TransactionInfo {
+    pub fn get_received_token(&self) -> Option<(String, u64)> {
+        for pre_balance in &self.pre_token_balances {
+            if let Some(post_balance) = self
+                .post_token_balances
+                .iter()
+                .find(|b| b.mint == pre_balance.mint && b.owner == pre_balance.owner)
+            {
+                let pre_amount = pre_balance
+                    .ui_token_amount
+                    .amount
+                    .parse::<u64>()
+                    .unwrap_or(0);
+                let post_amount = post_balance
+                    .ui_token_amount
+                    .amount
+                    .parse::<u64>()
+                    .unwrap_or(0);
+                if post_amount > pre_amount {
+                    return Some((post_balance.mint.clone(), post_amount - pre_amount));
+                }
+            }
+        }
+        if self.balance_change > 0 && !self.is_token_transfer() {
+            return Some((
+                "So11111111111111111111111111111111111111112".to_string(),
+                self.balance_change as u64,
+            ));
+        }
+        for log in &self.logs {
+            if log.contains("Output amount:") || log.contains("amountOut:") || log.contains("toMint") {
+                let mut token_address = None;
+                let mut token_amount = None;
+                if log.contains("toMint") {
+                    if let Some(text) = log.split("toMint").nth(1) {
+                        let words: Vec<&str> = text.split_whitespace().collect();
+                        for word in words {
+                            if word.len() >= 32 && word.len() <= 44 {
+                                token_address = Some(word.to_string());
+                                break;
+                            }
+                        }
+                    }
+                }
+                if log.contains("amountOut:") {
+                    if let Some(amount_str) = log.split("amountOut:").nth(1) {
+                        let clean_str = amount_str.trim().split_whitespace().next().unwrap_or("");
+                        if let Ok(amount) = clean_str.parse::<u64>() {
+                            token_amount = Some(amount);
+                        }
+                    }
+                } else if log.contains("Output amount:") {
+                    if let Some(amount_str) = log.split(':').nth(1) {
+                        let clean_str = amount_str.trim().split_whitespace().next().unwrap_or("");
+                        if let Ok(amount) = clean_str.parse::<u64>() {
+                            token_amount = Some(amount);
+                        }
+                    }
+                }
+                
+                if let (Some(address), Some(amount)) = (token_address, token_amount) {
+                    return Some((address, amount));
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn get_spent_token(&self) -> Option<(String, u64)> {
+        for pre_balance in &self.pre_token_balances {
+            if let Some(post_balance) = self
+                .post_token_balances
+                .iter()
+                .find(|b| b.mint == pre_balance.mint && b.owner == pre_balance.owner)
+            {
+                let pre_amount = pre_balance
+                    .ui_token_amount
+                    .amount
+                    .parse::<u64>()
+                    .unwrap_or(0);
+                let post_amount = post_balance
+                    .ui_token_amount
+                    .amount
+                    .parse::<u64>()
+                    .unwrap_or(0);
+                if pre_amount > post_amount {
+                    return Some((pre_balance.mint.clone(), pre_amount - post_amount));
+                }
+            }
+        }
+        if self.balance_change < 0 && !self.is_token_transfer() {
+            return Some((
+                "So11111111111111111111111111111111111111112".to_string(),
+                self.balance_change.abs() as u64,
+            ));
+        }
+        for log in &self.logs {
+            if log.contains("Input amount:")
+                || log.contains("amountIn:")
+                || log.contains("fromMint")
+            {
+                let mut token_address = None;
+                let mut token_amount = None;
+                if log.contains("fromMint") {
+                    if let Some(text) = log.split("fromMint").nth(1) {
+                        let words: Vec<&str> = text.split_whitespace().collect();
+                        for word in words {
+                            if word.len() >= 32 && word.len() <= 44 {
+                                token_address = Some(word.to_string());
+                                break;
+                            }
+                        }
+                    }
+                }
+                if log.contains("amountIn:") {
+                    if let Some(amount_str) = log.split("amountIn:").nth(1) {
+                        let clean_str = amount_str.trim().split_whitespace().next().unwrap_or("");
+                        if let Ok(amount) = clean_str.parse::<u64>() {
+                            token_amount = Some(amount);
+                        }
+                    }
+                } else if log.contains("Input amount:") {
+                    if let Some(amount_str) = log.split(':').nth(1) {
+                        let clean_str = amount_str.trim().split_whitespace().next().unwrap_or("");
+                        if let Ok(amount) = clean_str.parse::<u64>() {
+                            token_amount = Some(amount);
+                        }
+                    }
+                }
+                if let (Some(address), Some(amount)) = (token_address, token_amount) {
+                    return Some((address, amount));
+                }
+            }
+        }
+        None
+    }
+
+    pub fn get_pool_left_amount(&self) -> Option<u64> {
+        for pre_balance in &self.pre_token_balances {
+            if let Some(post_balance) = self
+                .post_token_balances
+                .iter()
+                .find(|b| b.mint == pre_balance.mint && b.owner == pre_balance.owner)
+            {
+                let pre_amount = pre_balance
+                    .ui_token_amount
+                    .amount
+                    .parse::<u64>()
+                    .unwrap_or(0);
+                let post_amount = post_balance
+                    .ui_token_amount
+                    .amount
+                    .parse::<u64>()
+                    .unwrap_or(0);
+                if pre_amount > post_amount {
+                    return Some(pre_amount - post_amount);
+                }
+            }
+        }
+        if self.balance_change < 0 && !self.is_token_transfer() {
+            return Some(self.balance_change.abs() as u64);
+        }
+        for log in &self.logs {
+            if log.contains("Input amount:") || log.contains("amountIn:") {
+                if let Some(amount_str) = log.split(':').nth(1) {
+                    let amount_str = amount_str.trim().split_whitespace().next().unwrap_or("");
+                    if let Ok(amount) = amount_str.parse::<u64>() {
+                        return Some(amount);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    pub fn get_pool_right_amount(&self) -> Option<u64> {
+        for pre_balance in &self.pre_token_balances {
+            if let Some(post_balance) = self
+                .post_token_balances
+                .iter()
+                .find(|b| b.mint == pre_balance.mint && b.owner == pre_balance.owner)
+            {
+                let pre_amount = pre_balance
+                    .ui_token_amount
+                    .amount
+                    .parse::<u64>()
+                    .unwrap_or(0);
+                let post_amount = post_balance
+                    .ui_token_amount
+                    .amount
+                    .parse::<u64>()
+                    .unwrap_or(0);
+                if post_amount > pre_amount {
+                    return Some(post_amount - pre_amount);
+                }
+            }
+        }
+        if self.balance_change > 0 && !self.is_token_transfer() {
+            return Some(self.balance_change as u64);
+        }
+        for log in &self.logs {
+            if log.contains("Output amount:") || log.contains("amountOut:") {
+                if let Some(amount_str) = log.split(':').nth(1) {
+                    let amount_str = amount_str.trim().split_whitespace().next().unwrap_or("");
+                    if let Ok(amount) = amount_str.parse::<u64>() {
+                        return Some(amount);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    pub fn get_pool_left_amount_sol(&self) -> Option<f64> {
+        self.get_pool_left_amount()
+            .map(|lamports| lamports as f64 / LAMPORTS_PER_SOL as f64)
+    }
+
+    pub fn get_pool_right_amount_sol(&self) -> Option<f64> {
+        self.get_pool_right_amount()
+            .map(|lamports| lamports as f64 / LAMPORTS_PER_SOL as f64)
+    }
+
+    pub fn get_received_token_sol(&self) -> Option<(String, f64)> {
+        self.get_received_token()
+            .map(|(address, lamports)| (address, lamports as f64 / LAMPORTS_PER_SOL as f64))
+    }
+
+    pub fn get_spent_token_sol(&self) -> Option<(String, f64)> {
+        self.get_spent_token()
+            .map(|(address, lamports)| (address, lamports as f64 / LAMPORTS_PER_SOL as f64))
+    }
+
+    pub fn get_pool_left_address(&self) -> Option<String> {
+        for pre_balance in &self.pre_token_balances {
+            if let Some(post_balance) = self
+                .post_token_balances
+                .iter()
+                .find(|b| b.mint == pre_balance.mint && b.owner == pre_balance.owner)
+            {
+                let pre_amount = pre_balance
+                    .ui_token_amount
+                    .amount
+                    .parse::<u64>()
+                    .unwrap_or(0);
+                let post_amount = post_balance
+                    .ui_token_amount
+                    .amount
+                    .parse::<u64>()
+                    .unwrap_or(0);
+                if pre_amount > post_amount {
+                    return Some(pre_balance.mint.clone());
+                }
+            }
+        }
+        if self.balance_change < 0 && !self.is_token_transfer() {
+            return Some("So11111111111111111111111111111111111111112".to_string());
+        }
+        for log in &self.logs {
+            if log.contains("inputMint") || log.contains("fromMint") {
+                let text = log.split("inputMint").nth(1).unwrap_or("");
+                let words: Vec<&str> = text.split_whitespace().collect();
+                for word in words {
+                    if word.len() >= 32 && word.len() <= 44 {
+                        return Some(word.to_string());
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn get_pool_right_address(&self) -> Option<String> {
+        for pre_balance in &self.pre_token_balances {
+            if let Some(post_balance) = self
+                .post_token_balances
+                .iter()
+                .find(|b| b.mint == pre_balance.mint && b.owner == pre_balance.owner)
+            {
+                let pre_amount = pre_balance
+                    .ui_token_amount
+                    .amount
+                    .parse::<u64>()
+                    .unwrap_or(0);
+                let post_amount = post_balance
+                    .ui_token_amount
+                    .amount
+                    .parse::<u64>()
+                    .unwrap_or(0);
+                if post_amount > pre_amount {
+                    return Some(post_balance.mint.clone());
+                }
+            }
+        }
+        if self.balance_change > 0 && !self.is_token_transfer() {
+            return Some("So11111111111111111111111111111111111111112".to_string());
+        }
+        for log in &self.logs {
+            if log.contains("outputMint") || log.contains("toMint") {
+                let text = log.split("outputMint").nth(1).unwrap_or("");
+                let words: Vec<&str> = text.split_whitespace().collect();
+                for word in words {
+                    if word.len() >= 32 && word.len() <= 44 {
+                        return Some(word.to_string());
+                    }
+                }
+            }
+        }
+        None
+    }
+
     pub fn from_encoded_transaction(
         tx: &EncodedConfirmedTransactionWithStatusMeta,
         signature: &str,
