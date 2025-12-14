@@ -20,7 +20,7 @@ use solana_transaction_status::{
 use crate::global::{
     METEORA_DAMM_V2_PROGRAM_ID, METEORA_DLMM_V2_PROGRAM_ID, METEORA_POOL_PROGRAM_ID,
     ORCA_WHIRLPOOLS_PROGRAM_ID, PUMP_AAM_PROGRAM_ID, PUMP_BOND_CURVE_PROGRAM_ID,
-    RAYDIUM_CLMM_POOL_PROGRAM_ID, RAYDIUM_CPMM_POOL_PROGRAM_ID, RAYDIUM_V4_POOL_PROGRAM_ID,
+    RAYDIUM_CLMM_POOL_PROGRAM_ID, RAYDIUM_CPMM_POOL_PROGRAM_ID, RAYDIUM_V4_POOL_PROGRAM_ID, SOL,
 };
 use crate::types::{Direction, UnifiedError, UnifiedResult};
 
@@ -515,7 +515,7 @@ impl Trade {
     pub async fn get_transaction_details(
         &self,
         signature: &str,
-    ) -> UnifiedResult<EncodedConfirmedTransactionWithStatusMeta, String> {
+    ) -> Result<EncodedConfirmedTransactionWithStatusMeta, String> {
         let signature = match Signature::from_str(&signature) {
             Ok(signature) => signature,
             Err(_) => todo!(),
@@ -531,9 +531,9 @@ impl Trade {
             .await
         {
             Ok(transaction) => Ok(transaction),
-            Err(_e) => {
+            Err(e) => {
                 // get tade info error
-                Err(UnifiedError::Error("get tade info error".to_string()))
+                Err(format!("get tade info error: {:?}", e))
             }
         }
     }
@@ -658,180 +658,101 @@ pub struct TransactionInfo {
     pub updated_at: u64, // Record update timestamp
     pub source: String,  // Data source
     pub confidence: f64, // Data confidence level 0.0-1.0
-
     // trade direction
     pub direction: Option<Direction>,
 }
 
 impl TransactionInfo {
     pub fn get_received_token(&self) -> Option<(String, u64)> {
-        for pre_balance in &self.pre_token_balances {
-            if let Some(post_balance) = self
-                .post_token_balances
-                .iter()
-                .find(|b| b.mint == pre_balance.mint && b.owner == pre_balance.owner)
-            {
-                let pre_amount = pre_balance
-                    .ui_token_amount
-                    .amount
-                    .parse::<u64>()
-                    .unwrap_or(0);
-                let post_amount = post_balance
-                    .ui_token_amount
-                    .amount
-                    .parse::<u64>()
-                    .unwrap_or(0);
-                if post_amount > pre_amount {
-                    return Some((post_balance.mint.clone(), post_amount - pre_amount));
-                }
+        if self.balance_change > 0 {
+            let amount = self.balance_change as u64;
+            if !self.is_token_transfer() {
+                return Some((SOL.to_string(), amount));
+            }
+            let token_received = self.get_token_received_amount();
+            if let Some((token_address, token_amount)) = token_received {
+                return Some((token_address, token_amount));
+            }
+            return Some((SOL.to_string(), amount));
+        }
+        let token_received = self.get_token_received_amount();
+        if let Some((token_address, amount)) = token_received {
+            if amount > 0 {
+                return Some((token_address, amount));
             }
         }
-        if self.balance_change > 0 && !self.is_token_transfer() {
-            return Some((
-                "So11111111111111111111111111111111111111112".to_string(),
-                self.balance_change as u64,
-            ));
-        }
-        for log in &self.logs {
-            if log.contains("Output amount:") || log.contains("amountOut:") || log.contains("toMint") {
-                let mut token_address = None;
-                let mut token_amount = None;
-                if log.contains("toMint") {
-                    if let Some(text) = log.split("toMint").nth(1) {
-                        let words: Vec<&str> = text.split_whitespace().collect();
-                        for word in words {
-                            if word.len() >= 32 && word.len() <= 44 {
-                                token_address = Some(word.to_string());
-                                break;
-                            }
-                        }
-                    }
-                }
-                if log.contains("amountOut:") {
-                    if let Some(amount_str) = log.split("amountOut:").nth(1) {
-                        let clean_str = amount_str.trim().split_whitespace().next().unwrap_or("");
-                        if let Ok(amount) = clean_str.parse::<u64>() {
-                            token_amount = Some(amount);
-                        }
-                    }
-                } else if log.contains("Output amount:") {
-                    if let Some(amount_str) = log.split(':').nth(1) {
-                        let clean_str = amount_str.trim().split_whitespace().next().unwrap_or("");
-                        if let Ok(amount) = clean_str.parse::<u64>() {
-                            token_amount = Some(amount);
-                        }
-                    }
-                }
-                
-                if let (Some(address), Some(amount)) = (token_address, token_amount) {
-                    return Some((address, amount));
-                }
+        if self.is_swap {
+            if let Some((address, amount)) = self.extract_swap_output_from_logs() {
+                return Some((address, amount));
             }
         }
-
         None
     }
 
     pub fn get_spent_token(&self) -> Option<(String, u64)> {
-        for pre_balance in &self.pre_token_balances {
-            if let Some(post_balance) = self
-                .post_token_balances
-                .iter()
-                .find(|b| b.mint == pre_balance.mint && b.owner == pre_balance.owner)
-            {
-                let pre_amount = pre_balance
-                    .ui_token_amount
-                    .amount
-                    .parse::<u64>()
-                    .unwrap_or(0);
-                let post_amount = post_balance
-                    .ui_token_amount
-                    .amount
-                    .parse::<u64>()
-                    .unwrap_or(0);
-                if pre_amount > post_amount {
-                    return Some((pre_balance.mint.clone(), pre_amount - post_amount));
-                }
+        use crate::global::{SOL, USDC, USDT};
+        if self.balance_change < 0 {
+            let amount = self.balance_change.abs() as u64;
+            if !self.is_token_transfer() {
+                return Some((SOL.to_string(), amount));
+            }
+            let token_spent = self.get_token_spent_amount();
+            if let Some((token_address, token_amount)) = token_spent {
+                return Some((token_address, token_amount));
+            }
+            return Some((SOL.to_string(), amount));
+        }
+        let token_spent = self.get_token_spent_amount();
+        if let Some((token_address, amount)) = token_spent {
+            if amount > 0 {
+                return Some((token_address, amount));
             }
         }
-        if self.balance_change < 0 && !self.is_token_transfer() {
-            return Some((
-                "So11111111111111111111111111111111111111112".to_string(),
-                self.balance_change.abs() as u64,
-            ));
-        }
-        for log in &self.logs {
-            if log.contains("Input amount:")
-                || log.contains("amountIn:")
-                || log.contains("fromMint")
-            {
-                let mut token_address = None;
-                let mut token_amount = None;
-                if log.contains("fromMint") {
-                    if let Some(text) = log.split("fromMint").nth(1) {
-                        let words: Vec<&str> = text.split_whitespace().collect();
-                        for word in words {
-                            if word.len() >= 32 && word.len() <= 44 {
-                                token_address = Some(word.to_string());
-                                break;
-                            }
-                        }
-                    }
-                }
-                if log.contains("amountIn:") {
-                    if let Some(amount_str) = log.split("amountIn:").nth(1) {
-                        let clean_str = amount_str.trim().split_whitespace().next().unwrap_or("");
-                        if let Ok(amount) = clean_str.parse::<u64>() {
-                            token_amount = Some(amount);
-                        }
-                    }
-                } else if log.contains("Input amount:") {
-                    if let Some(amount_str) = log.split(':').nth(1) {
-                        let clean_str = amount_str.trim().split_whitespace().next().unwrap_or("");
-                        if let Ok(amount) = clean_str.parse::<u64>() {
-                            token_amount = Some(amount);
-                        }
-                    }
-                }
-                if let (Some(address), Some(amount)) = (token_address, token_amount) {
-                    return Some((address, amount));
-                }
+        if self.is_swap {
+            if let Some((address, amount)) = self.extract_swap_input_from_logs() {
+                return Some((address, amount));
             }
         }
         None
     }
 
     pub fn get_pool_left_amount(&self) -> Option<u64> {
-        for pre_balance in &self.pre_token_balances {
-            if let Some(post_balance) = self
-                .post_token_balances
-                .iter()
-                .find(|b| b.mint == pre_balance.mint && b.owner == pre_balance.owner)
-            {
-                let pre_amount = pre_balance
-                    .ui_token_amount
-                    .amount
-                    .parse::<u64>()
-                    .unwrap_or(0);
-                let post_amount = post_balance
-                    .ui_token_amount
-                    .amount
-                    .parse::<u64>()
-                    .unwrap_or(0);
-                if pre_amount > post_amount {
-                    return Some(pre_amount - post_amount);
+        if let Some(address) = self.get_pool_left_address() {
+            if let Some(amount) = self.input_amount {
+                return Some(amount);
+            }
+            for log in &self.logs {
+                if log.contains("Input amount:") || log.contains("amountIn:") {
+                    let mut cleaned = log.to_string();
+                    cleaned = cleaned
+                        .replace("Input amount:", "")
+                        .replace("amountIn:", "");
+                    for word in cleaned.split_whitespace() {
+                        if let Ok(amount) =
+                            word.trim_matches(|c: char| !c.is_digit(10)).parse::<u64>()
+                        {
+                            if amount > 0 {
+                                return Some(amount);
+                            }
+                        }
+                    }
                 }
             }
-        }
-        if self.balance_change < 0 && !self.is_token_transfer() {
-            return Some(self.balance_change.abs() as u64);
-        }
-        for log in &self.logs {
-            if log.contains("Input amount:") || log.contains("amountIn:") {
-                if let Some(amount_str) = log.split(':').nth(1) {
-                    let amount_str = amount_str.trim().split_whitespace().next().unwrap_or("");
-                    if let Ok(amount) = amount_str.parse::<u64>() {
-                        return Some(amount);
+            for pre_balance in &self.pre_token_balances {
+                if pre_balance.mint == address {
+                    let pre_amount = pre_balance
+                        .ui_token_amount
+                        .amount
+                        .parse::<u64>()
+                        .unwrap_or(0);
+                    let post_amount = self
+                        .post_token_balances
+                        .iter()
+                        .find(|b| b.mint == address && b.owner == pre_balance.owner)
+                        .and_then(|b| b.ui_token_amount.amount.parse::<u64>().ok())
+                        .unwrap_or(0);
+                    if pre_amount > post_amount {
+                        return Some(pre_amount - post_amount);
                     }
                 }
             }
@@ -840,37 +761,292 @@ impl TransactionInfo {
     }
 
     pub fn get_pool_right_amount(&self) -> Option<u64> {
-        for pre_balance in &self.pre_token_balances {
-            if let Some(post_balance) = self
-                .post_token_balances
-                .iter()
-                .find(|b| b.mint == pre_balance.mint && b.owner == pre_balance.owner)
-            {
-                let pre_amount = pre_balance
-                    .ui_token_amount
-                    .amount
-                    .parse::<u64>()
-                    .unwrap_or(0);
-                let post_amount = post_balance
-                    .ui_token_amount
-                    .amount
-                    .parse::<u64>()
-                    .unwrap_or(0);
-                if post_amount > pre_amount {
-                    return Some(post_amount - pre_amount);
+        if let Some(address) = self.get_pool_right_address() {
+            if let Some(amount) = self.output_amount {
+                return Some(amount);
+            }
+            for log in &self.logs {
+                if log.contains("Output amount:") || log.contains("amountOut:") {
+                    let mut cleaned = log.to_string();
+                    cleaned = cleaned
+                        .replace("Output amount:", "")
+                        .replace("amountOut:", "");
+                    for word in cleaned.split_whitespace() {
+                        if let Ok(amount) =
+                            word.trim_matches(|c: char| !c.is_digit(10)).parse::<u64>()
+                        {
+                            if amount > 0 {
+                                return Some(amount);
+                            }
+                        }
+                    }
+                }
+            }
+            for post_balance in &self.post_token_balances {
+                if post_balance.mint == address {
+                    let post_amount = post_balance
+                        .ui_token_amount
+                        .amount
+                        .parse::<u64>()
+                        .unwrap_or(0);
+                    let pre_amount = self
+                        .pre_token_balances
+                        .iter()
+                        .find(|b| b.mint == address && b.owner == post_balance.owner)
+                        .and_then(|b| b.ui_token_amount.amount.parse::<u64>().ok())
+                        .unwrap_or(0);
+                    if post_amount > pre_amount {
+                        return Some(post_amount - pre_amount);
+                    } else if post_amount > 0 && pre_amount == 0 {
+                        return Some(post_amount);
+                    }
                 }
             }
         }
-        if self.balance_change > 0 && !self.is_token_transfer() {
-            return Some(self.balance_change as u64);
-        }
+        None
+    }
+
+    pub fn get_pool_left_address(&self) -> Option<String> {
+        use crate::global::{SOL, USDC, USDT};
         for log in &self.logs {
-            if log.contains("Output amount:") || log.contains("amountOut:") {
-                if let Some(amount_str) = log.split(':').nth(1) {
-                    let amount_str = amount_str.trim().split_whitespace().next().unwrap_or("");
-                    if let Ok(amount) = amount_str.parse::<u64>() {
-                        return Some(amount);
+            if let Some(address) = Self::extract_address_from_log(log, "fromMint") {
+                if address != SOL && address != USDC && address != USDT {
+                    return Some(address);
+                }
+            }
+            if let Some(address) = Self::extract_address_from_log(log, "inputMint") {
+                if address != SOL && address != USDC && address != USDT {
+                    return Some(address);
+                }
+            }
+        }
+        if let Some(input_mint) = &self.input_mint {
+            if input_mint != SOL && input_mint != USDC && input_mint != USDT {
+                return Some(input_mint.clone());
+            }
+        }
+        if let Some((address, _)) = self.get_token_spent_amount() {
+            if address != SOL && address != USDC && address != USDT {
+                return Some(address);
+            }
+        }
+        for balance in self
+            .pre_token_balances
+            .iter()
+            .chain(&self.post_token_balances)
+        {
+            let mint = &balance.mint;
+            if mint != SOL && mint != USDC && mint != USDT {
+                return Some(mint.clone());
+            }
+        }
+        None
+    }
+
+    pub fn get_pool_right_address(&self) -> Option<String> {
+        use crate::global::{SOL, USDC, USDT};
+        for log in &self.logs {
+            if let Some(address) = Self::extract_address_from_log(log, "toMint") {
+                if address == SOL || address == USDC || address == USDT {
+                    return Some(address);
+                }
+            }
+            if let Some(address) = Self::extract_address_from_log(log, "outputMint") {
+                if address == SOL || address == USDC || address == USDT {
+                    return Some(address);
+                }
+            }
+        }
+        if let Some(output_mint) = &self.output_mint {
+            if output_mint == SOL || output_mint == USDC || output_mint == USDT {
+                return Some(output_mint.clone());
+            }
+        }
+        if let Some((address, _)) = self.get_token_received_amount() {
+            if address == SOL || address == USDC || address == USDT {
+                return Some(address);
+            }
+        }
+        for balance in self
+            .pre_token_balances
+            .iter()
+            .chain(&self.post_token_balances)
+        {
+            let mint = &balance.mint;
+            if mint == USDC {
+                return Some(USDC.to_string());
+            }
+            if mint == USDT {
+                return Some(USDT.to_string());
+            }
+            if mint == SOL {
+                return Some(SOL.to_string());
+            }
+        }
+        Some(SOL.to_string())
+    }
+
+    fn extract_address_from_log(log: &str, key: &str) -> Option<String> {
+        if let Some(start_idx) = log.find(key) {
+            let after_key = &log[start_idx + key.len()..];
+            for word in after_key.split_whitespace() {
+                let trimmed = word.trim_matches(|c: char| !c.is_alphanumeric());
+                // Solana地址通常是44字符的base58
+                if trimmed.len() == 44 && trimmed.chars().all(|c| c.is_alphanumeric()) {
+                    return Some(trimmed.to_string());
+                }
+            }
+        }
+        None
+    }
+
+    fn get_token_received_amount(&self) -> Option<(String, u64)> {
+        let mut max_amount = 0u64;
+        let mut max_token = None;
+        for post_balance in &self.post_token_balances {
+            let mint = &post_balance.mint;
+            let pre_amount = self
+                .pre_token_balances
+                .iter()
+                .find(|b| &b.mint == mint && b.owner == post_balance.owner)
+                .and_then(|b| b.ui_token_amount.amount.parse::<u64>().ok())
+                .unwrap_or(0);
+            let post_amount = post_balance
+                .ui_token_amount
+                .amount
+                .parse::<u64>()
+                .unwrap_or(0);
+            if post_amount > pre_amount {
+                let increase = post_amount - pre_amount;
+                if increase > max_amount {
+                    max_amount = increase;
+                    max_token = Some(mint.clone());
+                }
+            }
+        }
+        max_token.map(|token| (token, max_amount))
+    }
+
+    fn get_token_spent_amount(&self) -> Option<(String, u64)> {
+        let mut max_amount = 0u64;
+        let mut max_token = None;
+        for pre_balance in &self.pre_token_balances {
+            let mint = &pre_balance.mint;
+            let post_amount = self
+                .post_token_balances
+                .iter()
+                .find(|b| &b.mint == mint && b.owner == pre_balance.owner)
+                .and_then(|b| b.ui_token_amount.amount.parse::<u64>().ok())
+                .unwrap_or(0);
+            let pre_amount = pre_balance
+                .ui_token_amount
+                .amount
+                .parse::<u64>()
+                .unwrap_or(0);
+            if pre_amount > post_amount {
+                let decrease = pre_amount - post_amount;
+                if decrease > max_amount {
+                    max_amount = decrease;
+                    max_token = Some(mint.clone());
+                }
+            }
+        }
+        max_token.map(|token| (token, max_amount))
+    }
+
+    fn extract_swap_input_from_logs(&self) -> Option<(String, u64)> {
+        for log in &self.logs {
+            if log.contains("Input amount:")
+                || log.contains("amountIn:")
+                || log.contains("fromMint")
+            {
+                let mut address = None;
+                let mut amount = None;
+                if log.contains("fromMint") {
+                    let parts: Vec<&str> = log.split("fromMint").collect();
+                    if parts.len() > 1 {
+                        let text = parts[1];
+                        for word in text.split_whitespace() {
+                            if word.len() == 44 && word.chars().all(|c| c.is_alphanumeric()) {
+                                address = Some(word.to_string());
+                                break;
+                            }
+                        }
                     }
+                }
+                if log.contains("amountIn:") {
+                    let parts: Vec<&str> = log.split("amountIn:").collect();
+                    if parts.len() > 1 {
+                        let text = parts[1].trim();
+                        if let Ok(value) =
+                            text.split_whitespace().next().unwrap_or("0").parse::<u64>()
+                        {
+                            amount = Some(value);
+                        }
+                    }
+                } else if log.contains("Input amount:") {
+                    let parts: Vec<&str> = log.split("Input amount:").collect();
+                    if parts.len() > 1 {
+                        let text = parts[1].trim();
+                        if let Ok(value) =
+                            text.split_whitespace().next().unwrap_or("0").parse::<u64>()
+                        {
+                            amount = Some(value);
+                        }
+                    }
+                }
+                if let (Some(addr), Some(amt)) = (address, amount) {
+                    return Some((addr, amt));
+                }
+            }
+        }
+
+        None
+    }
+
+    fn extract_swap_output_from_logs(&self) -> Option<(String, u64)> {
+        for log in &self.logs {
+            if log.contains("Output amount:")
+                || log.contains("amountOut:")
+                || log.contains("toMint")
+            {
+                let mut address = None;
+                let mut amount = None;
+                if log.contains("toMint") {
+                    let parts: Vec<&str> = log.split("toMint").collect();
+                    if parts.len() > 1 {
+                        let text = parts[1];
+                        for word in text.split_whitespace() {
+                            if word.len() == 44 && word.chars().all(|c| c.is_alphanumeric()) {
+                                address = Some(word.to_string());
+                                break;
+                            }
+                        }
+                    }
+                }
+                if log.contains("amountOut:") {
+                    let parts: Vec<&str> = log.split("amountOut:").collect();
+                    if parts.len() > 1 {
+                        let text = parts[1].trim();
+                        if let Ok(value) =
+                            text.split_whitespace().next().unwrap_or("0").parse::<u64>()
+                        {
+                            amount = Some(value);
+                        }
+                    }
+                } else if log.contains("Output amount:") {
+                    let parts: Vec<&str> = log.split("Output amount:").collect();
+                    if parts.len() > 1 {
+                        let text = parts[1].trim();
+                        if let Ok(value) =
+                            text.split_whitespace().next().unwrap_or("0").parse::<u64>()
+                        {
+                            amount = Some(value);
+                        }
+                    }
+                }
+                if let (Some(addr), Some(amt)) = (address, amount) {
+                    return Some((addr, amt));
                 }
             }
         }
@@ -895,85 +1071,6 @@ impl TransactionInfo {
     pub fn get_spent_token_sol(&self) -> Option<(String, f64)> {
         self.get_spent_token()
             .map(|(address, lamports)| (address, lamports as f64 / LAMPORTS_PER_SOL as f64))
-    }
-
-    pub fn get_pool_left_address(&self) -> Option<String> {
-        for pre_balance in &self.pre_token_balances {
-            if let Some(post_balance) = self
-                .post_token_balances
-                .iter()
-                .find(|b| b.mint == pre_balance.mint && b.owner == pre_balance.owner)
-            {
-                let pre_amount = pre_balance
-                    .ui_token_amount
-                    .amount
-                    .parse::<u64>()
-                    .unwrap_or(0);
-                let post_amount = post_balance
-                    .ui_token_amount
-                    .amount
-                    .parse::<u64>()
-                    .unwrap_or(0);
-                if pre_amount > post_amount {
-                    return Some(pre_balance.mint.clone());
-                }
-            }
-        }
-        if self.balance_change < 0 && !self.is_token_transfer() {
-            return Some("So11111111111111111111111111111111111111112".to_string());
-        }
-        for log in &self.logs {
-            if log.contains("inputMint") || log.contains("fromMint") {
-                let text = log.split("inputMint").nth(1).unwrap_or("");
-                let words: Vec<&str> = text.split_whitespace().collect();
-                for word in words {
-                    if word.len() >= 32 && word.len() <= 44 {
-                        return Some(word.to_string());
-                    }
-                }
-            }
-        }
-
-        None
-    }
-
-    pub fn get_pool_right_address(&self) -> Option<String> {
-        for pre_balance in &self.pre_token_balances {
-            if let Some(post_balance) = self
-                .post_token_balances
-                .iter()
-                .find(|b| b.mint == pre_balance.mint && b.owner == pre_balance.owner)
-            {
-                let pre_amount = pre_balance
-                    .ui_token_amount
-                    .amount
-                    .parse::<u64>()
-                    .unwrap_or(0);
-                let post_amount = post_balance
-                    .ui_token_amount
-                    .amount
-                    .parse::<u64>()
-                    .unwrap_or(0);
-                if post_amount > pre_amount {
-                    return Some(post_balance.mint.clone());
-                }
-            }
-        }
-        if self.balance_change > 0 && !self.is_token_transfer() {
-            return Some("So11111111111111111111111111111111111111112".to_string());
-        }
-        for log in &self.logs {
-            if log.contains("outputMint") || log.contains("toMint") {
-                let text = log.split("outputMint").nth(1).unwrap_or("");
-                let words: Vec<&str> = text.split_whitespace().collect();
-                for word in words {
-                    if word.len() >= 32 && word.len() <= 44 {
-                        return Some(word.to_string());
-                    }
-                }
-            }
-        }
-        None
     }
 
     pub fn from_encoded_transaction(
