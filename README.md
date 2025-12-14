@@ -45,7 +45,7 @@ The Trade module provides functionality for interacting with the Solana blockcha
 
 ## Function Usage Examples
 
-### 1. estimate_fee - Estimate Transaction Fee
+### 1. Estimate Transaction Fee
 
 ```rust
 let solana = Solana::new(Mode::DEV).unwrap();
@@ -57,7 +57,7 @@ Err(e) => eprintln!("Error estimating fee: {}", e),
 }
 ```
 
-### 2. `get_transactions_history_by_cursor` - Get Transaction History with Pagination
+### 2. Get Transaction History with Pagination
 
 ```rust
 let mut cursor: Option<String> = None;
@@ -96,7 +96,7 @@ println!("Retrieved {} transactions", transactions.len());
 }
 ```
 
-### 3. `get_transactions_history_filtered` - Get Filtered Transaction History
+### 3. Get Filtered Transaction History
 
 ```rust
 let client = solana.client_arc();
@@ -128,7 +128,7 @@ address,
 ).await?;
 ```
 
-### 4. `get_last_transactions_contains_address` - Get Last Transaction Containing Another Address
+### 4. Get Last Transaction Containing Another Address
 
 ```rust
 let address_a = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
@@ -146,7 +146,7 @@ Err(e) => eprintln!("Error: {}", e),
 }
 ```
 
-### 5. `get_transactions_vec_containing_address` - Get All Transactions Containing Another Address
+### 5. Get All Transactions Containing Another Address
 
 ```rust
 let address_a = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
@@ -167,7 +167,7 @@ println!("Found {} transactions containing both addresses", transactions.len());
 }
 ```
 
-### 6. `get_transaction_details` - Get Transaction Details
+### 6. Get Transaction Details
 
 ```rust
 let signature = "5h6xBEauJ3PK6SWZrW5M4Q7GjS2eX2jGqKJ8H9i0K1L2M3N4O5P6Q7R8S9T0U1V2W3X4Y5Z6A7B8C9D0";
@@ -193,7 +193,7 @@ signature,
 }
 ```
 
-### 7. `get_transactions_by_recipient_and_payer` - Get Transactions by Recipient and Payer (Loose)
+### 7. Get Transactions by Recipient and Payer (Loose)
 
 ```rust
 let recipient = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
@@ -214,7 +214,7 @@ transactions.len(), recipient, payer);
 }
 ```
 
-### 8. `get_transactions_by_recipient_and_payer_strict` - Get Transactions by Recipient and Payer (Strict)
+### 8. Get Transactions by Recipient and Payer (Strict)
 
 ```rust
 let recipient = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
@@ -245,7 +245,7 @@ transactions.len(), recipient, payer);
 }
 ```
 
-### 9. `has_payment_relationship` - Check Payment Relationship
+### 9. Check Payment Relationship
 
 ```rust
 let recipient = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
@@ -262,7 +262,7 @@ Err(e) => eprintln!("Error checking payment relationship: {}", e),
 }
 ```
 
-### 10. `get_total_payment_amount` - Get Total Payment Amount
+### 10. Get Total Payment Amount
 
 ```rust
 let recipient = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
@@ -341,7 +341,7 @@ signature,
 }
 ```
 
-### 12. Complete Example: Analyze Address Relationships
+### 12. Analyze Address Relationships
 
 ```rust
 async fn analyze_address_relationships(

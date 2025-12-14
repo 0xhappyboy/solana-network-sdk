@@ -891,7 +891,6 @@ impl TransactionInfo {
             let after_key = &log[start_idx + key.len()..];
             for word in after_key.split_whitespace() {
                 let trimmed = word.trim_matches(|c: char| !c.is_alphanumeric());
-                // Solana地址通常是44字符的base58
                 if trimmed.len() == 44 && trimmed.chars().all(|c| c.is_alphanumeric()) {
                     return Some(trimmed.to_string());
                 }
