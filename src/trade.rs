@@ -538,6 +538,7 @@ impl Trade {
 }
 
 /// a more readable transaction information structure.
+#[derive(Debug)]
 pub struct TransactionInfo {
     // Basic Identification Fields
     pub transaction_hash: String,

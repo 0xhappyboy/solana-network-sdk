@@ -39,226 +39,483 @@ async fn main() -> Result<(), String> {
 
 ## 交易模块
 
-### 概述
+Trade 模块提供了与 Solana 区块链交互的功能，包括获取交易历史、分析交易详情、检查地址关系等。
 
-`Trade` 模块提供与 Solana 区块链交互的功能，包括交易历史检索、交易分析、支付关系检测和详细交易解析。
+### 1. 估算交易费用
 
-### 结构体
+```rust
+let solana = Solana::new(Mode::DEV).unwrap();
+let trade = solana.create_trade();
 
-### `Trade`
+match trade.estimate_fee().await {
+Ok(fee) => println!("估算费用: {} lamports", fee),
+Err(e) => eprintln!("估算费用错误: {}", e),
+}
+```
 
-交易操作的主要结构体。
-
-### 方法
-
-### `new(client: Arc<RpcClient>) -> Self`
-
-使用给定的 RPC 客户端创建新的 `Trade` 实例。
-
-**参数:**
-
-- `client`: 用于 Solana 的 Arc 包装的 RPC 客户端
-
-**返回:**
-
-- `Trade` 实例
-
-### `estimate_fee() -> Result<u64, String>`
-
-估算 Solana 网络上的当前交易费用。
-
-**返回:**
-
-- `Ok(u64)`: 以 lamports 为单位的估算费用
-- `Err(String)`: 如果估算失败则返回错误信息
-
-### get_transactions_history_by_cursor(address: &str, cursor: Option<String>, page_size: u32) -> UnifiedResult<(Vec<RpcConfirmedTransactionStatusWithSignature>, Option<String>), String>
-
-检索指定地址的交易历史，支持分页。
-
-**参数:**
-
-- `address`: 钱包地址字符串
-- `cursor`: 用于分页的可选游标（最后交易的签名）
-- `page_size`: 每页检索的交易数量
-
-**返回:**
-
-- `Ok((Vec<RpcConfirmedTransactionStatusWithSignature>, Option<String>))`: 包含交易列表和下一个游标的元组
-- `Err(String)`: 如果检索失败则返回错误信息
-
-**示例:**
+### 2. 分页获取交易历史
 
 ```rust
 let mut cursor: Option<String> = None;
 loop {
-    match trade
-        .get_transactions_history_by_cursor(
-            "钱包地址",
-            cursor.clone(),
-            page_size,
-        )
-        .await
-    {
-        Ok(r) => {
-            // r.0 是交易历史列表
-            if r.1.is_none() {
+match trade
+.get_transactions_history_by_cursor(
+"8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R",
+cursor.clone(),
+50,
+)
+.await
+{
+Ok((transactions, next_cursor)) => {
+println!("获取到 {} 笔交易", transactions.len());
+
+            for tx in &transactions {
+                println!("签名: {}", tx.signature);
+                println!("区块槽位: {}", tx.slot);
+                println!("状态: {:?}", tx.err);
+            }
+
+            if next_cursor.is_none() {
+                println!("没有更多交易可获取");
                 break;
             }
-            cursor = r.1;
+
+            cursor = next_cursor;
+            println!("继续使用游标: {:?}", cursor);
         }
-        Err(_) => {
+        Err(e) => {
+            eprintln!("获取交易错误: {}", e);
             break;
         }
     }
+
 }
 ```
 
-### get_transactions_history_filtered(client: &Arc<RpcClient>, address: &str, filter: F) -> UnifiedResult<Vec<RpcConfirmedTransactionStatusWithSignature>, String>
-
-检索指定地址的过滤后交易历史。
-
-**参数:**
-
-- `client`: RPC 客户端引用
-- `address`: 钱包地址
-- `filter`: 返回 `true` 以保留交易记录的闭包
-
-**返回:**
-
-- `Ok(Vec<RpcConfirmedTransactionStatusWithSignature>)`: 过滤后的交易列表
-- `Err(String)`: 如果检索失败则返回错误信息
-
-**示例:**
+### 3. 获取筛选后的交易历史
 
 ```rust
-let history = Trade::get_transactions_history_filtered(
-    &client,
-    "钱包地址",
-    |sig_info| {
-        // 返回 true 以保留交易信息
-        true
-    },
-).await;
+let client = solana.client_arc();
+let address = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
+
+// 示例 1: 按区块时间筛选
+let recent_transactions = Trade::get_transactions_history_filtered(
+&client,
+address,
+|sig_info| {
+// 筛选最近 24 小时内的交易
+if let Some(block_time) = sig_info.block_time {
+let now = std::time::SystemTime::now()
+.duration_since(std::time::UNIX_EPOCH)
+.unwrap()
+.as_secs();
+now - block_time as u64 < 24 _ 60 _ 60
+} else {
+false
+}
+},
+).await?;
+
+// 示例 2: 仅筛选成功交易
+let successful_transactions = Trade::get_transactions_history_filtered(
+&client,
+address,
+|sig_info| sig_info.err.is_none(),
+).await?;
 ```
 
-### get_last_transactions_contains_address(address_a: &str, address_b: &str) -> UnifiedResult<Option<RpcConfirmedTransactionStatusWithSignature>, String>
+### 4. 获取包含另一地址的最后交易
 
-获取地址 A 中包含地址 B 的最后一条交易记录。
+```rust
+let address_a = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
+let address_b = "B5Zg7W7L7jH6K8L9M0N1O2P3Q4R5S6T7U8V9W0X1Y2Z";
+
+match trade.get_last_transactions_contains_address(address_a, address_b).await {
+Ok(Some(transaction)) => {
+println!("找到包含两个地址的交易:");
+println!("签名: {}", transaction.signature);
+println!("区块槽位: {}", transaction.slot);
+println!("区块时间: {:?}", transaction.block_time);
+}
+Ok(None) => println!("未找到包含两个地址的交易"),
+Err(e) => eprintln!("错误: {}", e),
+}
+```
+
+### 5. 获取所有包含另一地址的交易
+
+```rust
+let address_a = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
+let address_b = "B5Zg7W7L7jH6K8L9M0N1O2P3Q4R5S6T7U8V9W0X1Y2Z";
+
+match trade.get_transactions_vec_containing_address(address_a, address_b).await {
+Ok(transactions) => {
+println!("找到 {} 笔包含两个地址的交易", transactions.len());
+
+        for tx in transactions {
+            println!("- 签名: {}", tx.signature);
+            println!("  区块槽位: {}", tx.slot);
+            println!("  状态: {}", if tx.err.is_none() { "成功" } else { "失败" });
+        }
+    }
+    Err(e) => eprintln!("错误: {}", e),
+
+}
+```
+
+### 6. 获取交易详情
+
+```rust
+let signature = "5h6xBEauJ3PK6SWZrW5M4Q7GjS2eX2jGqKJ8H9i0K1L2M3N4O5P6Q7R8S9T0U1V2W3X4Y5Z6A7B8C9D0";
+
+match trade.get_transaction_details(signature).await {
+Ok(transaction) => {
+let tx_info = TransactionInfo::from_encoded_transaction(
+&transaction,
+signature,
+"主网"
+);
+
+        println!("交易详情:");
+        println!("发送方: {}", tx_info.from);
+        println!("接收方: {}", tx_info.to);
+        println!("金额: {} SOL", tx_info.value_sol);
+        println!("手续费: {} lamports", tx_info.fee);
+        println!("状态: {}", tx_info.status);
+        println!("类型: {}", tx_info.transaction_type);
+    }
+    Err(e) => eprintln!("获取交易详情错误: {}", e),
+
+}
+```
+
+### 7. 按收款方和付款方获取交易（宽松）
+
+```rust
+let recipient = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
+let payer = "B5Zg7W7L7jH6K8L9M0N1O2P3Q4R5S6T7U8V9W0X1Y2Z";
+let limit = 10;
+
+match trade.get_transactions_by_recipient_and_payer(recipient, payer, limit).await {
+Ok(transactions) => {
+println!("找到 {} 笔交易，其中 {} 是收款方，{} 参与其中",
+transactions.len(), recipient, payer);
+
+        for tx in transactions {
+            println!("签名: {}", tx.signature);
+        }
+    }
+    Err(e) => eprintln!("错误: {}", e),
+
+}
+```
+
+### 8. 按收款方和付款方获取交易（严格）
+
+```rust
+let recipient = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
+let payer = "B5Zg7W7L7jH6K8L9M0N1O2P3Q4R5S6T7U8V9W0X1Y2Z";
+let limit = 10;
+
+match trade.get_transactions_by_recipient_and_payer_strict(recipient, payer, limit).await {
+Ok(transactions) => {
+println!("找到 {} 笔交易，其中 {} 是收款方，{} 是付款方",
+transactions.len(), recipient, payer);
+        for tx in transactions {
+            match trade.get_transaction_details(&tx.signature).await {
+                Ok(details) => {
+                    let tx_info = TransactionInfo::from_encoded_transaction(
+                        &details,
+                        &tx.signature,
+                        "主网"
+                    );
+                    println!("- {}: {} SOL", tx.signature, tx_info.value_sol);
+                }
+                Err(_) => println!("- {}: 无法获取详情", tx.signature),
+            }
+        }
+    }
+    Err(e) => eprintln!("错误: {}", e),
+
+}
+```
+
+### 9. 检查支付关系
+
+```rust
+let recipient = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
+let payer = "B5Zg7W7L7jH6K8L9M0N1O2P3Q4R5S6T7U8V9W0X1Y2Z";
+
+match trade.has_payment_relationship(recipient, payer).await {
+Ok(Some(signature)) => {
+println!("发现支付关系！交易签名: {}", signature);
+}
+Ok(None) => {
+println!("未发现 {} 和 {} 之间的支付关系", recipient, payer);
+}
+Err(e) => eprintln!("检查支付关系错误: {}", e),
+}
+```
+
+### 10. 获取总支付金额
+
+```rust
+let recipient = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
+let payer = "B5Zg7W7L7jH6K8L9M0N1O2P3Q4R5S6T7U8V9W0X1Y2Z";
+
+// 获取所有时间的总金额
+match trade.get_total_payment_amount(recipient, payer, None).await {
+Ok(total_amount) => {
+println!("总支付金额: {} lamports ({:.4} SOL)",
+total_amount, total_amount as f64 / LAMPORTS_PER_SOL as f64);
+}
+Err(e) => eprintln!("错误: {}", e),
+}
+
+// 获取最近 7 天的总金额
+let seven_days = Some(7 _ 24 _ 60 * 60);
+match trade.get_total_payment_amount(recipient, payer, seven_days).await {
+Ok(total_amount) => {
+println!("最近 7 天支付金额: {} lamports", total_amount);
+}
+Err(e) => eprintln!("错误: {}", e),
+}
+```
+
+### 11. TransactionInfo 辅助方法
+
+```rust
+// 获取 TransactionInfo 对象后
+let signature = "5h6xBEauJ3PK6SWZrW5M4Q7GjS2eX2jGqKJ8H9i0K1L2M3N4O5P6Q7R8S9T0U1V2W3X4Y5Z6A7B8C9D0";
+match trade.get_transaction_details(signature).await {
+Ok(transaction) => {
+let tx_info = TransactionInfo::from_encoded_transaction(&transaction, signature, "主网");
+        // 检查交易是否成功
+        if tx_info.is_successful() {
+            println!("交易成功");
+        }
+        // 检查是否为代币转账
+        if tx_info.is_token_transfer() {
+            println!("这是代币转账");
+            if let Some(mint) = &tx_info.token_mint {
+                println!("代币铸造地址: {}", mint);
+            }
+        }
+        // 检查是否为大额交易
+        if tx_info.is_high_value() {
+            println!("检测到大额交易！");
+        }
+        // 检查特定地址是否为收款方
+        let address_to_check = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
+        if tx_info.is_recipient(address_to_check) {
+            println!("{} 是此交易的收款方", address_to_check);
+        }
+        // 检查特定地址是否为付款方
+        if tx_info.is_payer(address_to_check) {
+            println!("{} 是此交易的付款方", address_to_check);
+        }
+        // 获取支付金额
+        println!("支付金额: {} lamports", tx_info.get_payment_amount());
+        println!("支付金额: {} SOL", tx_info.get_payment_amount_sol());
+        // 获取净金额（余额变化减去手续费）
+        println!("净金额变化: {}", tx_info.get_net_amount());
+    }
+    Err(e) => eprintln!("错误: {}", e),
+}
+```
+
+### 12. 完整示例：分析地址关系
+
+```rust
+async fn analyze_address_relationships(
+trade: &Trade,
+address1: &str,
+address2: &str,
+) -> Result<(), String> {
+    println!("分析 {} 和 {} 之间的关系", address1, address2);
+    // 1. 检查是否有支付关系
+    match trade.has_payment_relationship(address1, address2).await {
+        Ok(Some(signature)) => {
+            println!("发现从 {} 到 {} 的支付", address2, address1);
+            println!("交易: {}", signature);
+        }
+        Ok(None) => println!("未发现从 {} 到 {} 的直接支付", address2, address1),
+        Err(e) => eprintln!("错误: {}", e),
+    }
+    // 2. 检查反向关系
+    match trade.has_payment_relationship(address2, address1).await {
+        Ok(Some(signature)) => {
+            println!("发现从 {} 到 {} 的支付", address1, address2);
+            println!("交易: {}", signature);
+        }
+        Ok(None) => println!("未发现从 {} 到 {} 的直接支付", address1, address2),
+        Err(e) => eprintln!("错误: {}", e),
+    }
+    // 3. 获取所有涉及两者的交易
+    let transactions_a = trade.get_transactions_vec_containing_address(address1, address2).await?;
+    let transactions_b = trade.get_transactions_vec_containing_address(address2, address1).await?;
+    println!("涉及两个地址的总交易数: {}",
+             transactions_a.len() + transactions_b.len());
+    // 4. 计算总金额
+    let total_from_2_to_1 = trade.get_total_payment_amount(address1, address2, None).await?;
+    let total_from_1_to_2 = trade.get_total_payment_amount(address2, address1, None).await?;
+    println!("从 {} 到 {} 的总金额: {:.4} SOL",
+             address2, address1,
+             total_from_2_to_1 as f64 / LAMPORTS_PER_SOL as f64);
+    println!("从 {} 到 {} 的总金额: {:.4} SOL",
+             address1, address2,
+             total_from_1_to_2 as f64 / LAMPORTS_PER_SOL as f64);
+    Ok(())
+}
+```
+
+# 扫描模块
+
+### 1. 获取所有历史签名
+
+使用分页获取给定地址的所有历史交易签名。
+
+```rust
+use solana_network_sdk::Solana;
+use solana_network_sdk::types::Mode;
+
+#[tokio::main]
+async fn main() -> Result<(), String> {
+let solana = Solana::new(Mode::MAIN).unwrap();
+let client = solana.client_arc();
+let scan = solana_network_sdk::scan::Scan::new(client.clone());
+    // 获取USDC地址的所有历史签名
+    let signatures = scan.get_all_signatures_by_address(
+        "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC代币地址
+        Some(300),  // 请求间延迟300毫秒
+        Some(500),  // 每批500个签名
+    ).await?;
+    println!("总签名数: {}", signatures.len());
+    // 打印前5个签名
+    for (i, sig) in signatures.iter().take(5).enumerate() {
+        println!("{}. {}", i + 1, sig);
+    }
+    Ok(())
+}
+```
 
 **参数:**
 
-- `address_a`: 主要查询地址
-- `address_b`: 要检查是否包含的地址
+- `address: &str` - Base58 编码的 Solana 地址
+- `interval_time: Option<u64>` - RPC 调用之间的延迟（毫秒，默认: 200）
+- `batch_size: Option<u64>` - 每次 RPC 调用的签名数量（默认: 1000）
 
-**返回:**
+**返回:** `Result<Vec<String>, String>`
 
-- `Ok(Some(RpcConfirmedTransactionStatusWithSignature))`: 包含地址 B 的最后交易
-- `Ok(None)`: 不包含地址 B
-- `Err(String)`: 错误信息
+### 2. 获取有限数量的签名
 
-### get_transactions_vec_containing_address(address_a: &str, address_b: &str) -> UnifiedResult<Vec<RpcConfirmedTransactionStatusWithSignature>, String>
+使用安全机制获取特定数量的交易签名。
 
-获取地址 A 中包含地址 B 的所有交易。
+```rust
+use solana_network_sdk::Solana;
+use solana_network_sdk::types::Mode;
 
-**参数:**
-
-- `address_a`: 主要查询地址
-- `address_b`: 要包含的地址
-
-**返回:**
-
-- `Ok(Vec<RpcConfirmedTransactionStatusWithSignature>)`: 包含地址 B 的所有交易记录列表
-
-### get_transaction_details(signature: &str) -> UnifiedResult<EncodedConfirmedTransactionWithStatusMeta, String>
-
-通过签名获取详细的交易信息。
-
-**参数:**
-
-- `signature`: 交易签名哈希字符串
-
-**返回:**
-
-- `Ok(EncodedConfirmedTransactionWithStatusMeta)`: 详细的交易信息
-- `Err(String)`: 错误信息
-
-### get_transactions_by_recipient_and_payer(address_a: &str, address_b: &str, limit: usize) -> UnifiedResult<Vec<RpcConfirmedTransactionStatusWithSignature>, String>
-
-获取地址 A 为收款人且交易包含地址 B 的交易（宽松过滤）。
+#[tokio::main]
+async fn main() -> Result<(), String> {
+let solana = Solana::new(Mode::MAIN).unwrap();
+let client = solana.client_arc();
+let scan = solana_network_sdk::scan::Scan::new(client.clone());
+    // 使用速率限制获取最多50个签名
+    let signatures = scan.get_signatures_with_limit(
+        "Vote111111111111111111111111111111111111111", // Solana投票程序
+        50,         // 最多50个签名
+        Some(100),  // 请求间延迟100毫秒
+    ).await?;
+    println!("已检索 {} 个签名:", signatures.len());
+    for sig in &signatures {
+        println!("  - {}", sig);
+    }
+    Ok(())
+}
+```
 
 **参数:**
 
-- `address_a`: 收款人地址
-- `address_b`: 付款人地址
-- `limit`: 返回的最大交易数量
+- `address: &str` - Base58 编码的 Solana 地址
+- `limit: usize` - 要返回的最大签名数
+- `interval_time: Option<u64>` - RPC 调用之间的延迟（毫秒，默认: 200）
 
-**返回:**
+**返回:** `Result<Vec<String>, String>`
 
-- `Ok(Vec<RpcConfirmedTransactionStatusWithSignature>)`: 匹配的交易
+### 3. 获取最新签名
 
-### get_transactions_by_recipient_and_payer_strict(address_a: &str, address_b: &str, limit: usize) -> UnifiedResult<Vec<RpcConfirmedTransactionStatusWithSignature>, String>
+无需分页快速获取最新的交易签名。
 
-获取地址 A 为收款人且地址 B 为付款人的交易（严格过滤）。
+```rust
+use solana_network_sdk::Solana;
+use solana_network_sdk::types::Mode;
 
-**参数:**
-
-- `address_a`: 收款人地址
-- `address_b`: 付款人地址
-- `limit`: 返回的最大交易数量
-
-**返回:**
-
-- `Ok(Vec<RpcConfirmedTransactionStatusWithSignature>)`: 确认的交易
-
-### has_payment_relationship(address_a: &str, address_b: &str) -> UnifiedResult<Option<String>, String>
-
-快速检查两个地址之间是否存在支付关系（地址 B 支付给地址 A）。
-
-**参数:**
-
-- `address_a`: 收款人地址
-- `address_b`: 付款人地址
-
-**返回:**
-
-- `Ok(Some(String))`: 如果存在支付关系则返回交易签名
-- `Ok(None)`: 没有支付关系
-- `Err(String)`: 错误信息
-
-### get_total_payment_amount(address_a: &str, address_b: &str, time_range: Option<u64>) -> UnifiedResult<u64, String>
-
-获取地址 B 支付给地址 A 的总金额。
+#[tokio::main]
+async fn main() -> Result<(), String> {
+let solana = Solana::new(Mode::MAIN).unwrap();
+let client = solana.client_arc();
+let scan = solana_network_sdk::scan::Scan::new(client.clone());
+    // 获取10个最新签名
+    let signatures = scan.get_last_signatures(
+        "So11111111111111111111111111111111111111112", // SOL代币地址
+        10,  // 最近签名数量
+    ).await?;
+    println!("最新10个签名:");
+    for (i, sig) in signatures.iter().enumerate() {
+        println!("{}. {}", i + 1, sig);
+    }
+    Ok(())
+}
+```
 
 **参数:**
 
-- `address_a`: 收款人地址
-- `address_b`: 付款人地址
-- `time_range`: 时间范围（秒），None 表示所有时间
+- `address: &str` - Base58 编码的 Solana 地址
+- `count: usize` - 要返回的最近签名数量
 
-**返回:**
+**返回:** `Result<Vec<String>, String>`
 
-- `Ok(u64)`: 总支付金额（lamports）
-- `Err(String)`: 错误信息
+### 处理代币地址签名
 
-### is_transaction_contains_address(signature: &str, target_address: &str) -> bool （私有方法）
+```rust
+use solana_network_sdk::Solana;
+use solana_network_sdk::types::Mode;
 
-检查单个交易是否包含指定地址。
-
-### 辅助结构体
-
-### TransactionInfo
-
-更易读的交易信息结构体。
-
-### 主要方法:
-
-- `from_encoded_transaction()`: 从编码交易创建
-- `is_recipient()`: 检查地址是否为收款人
-- `is_payer()`: 检查地址是否为付款人
-- `get_payment_amount()`: 获取支付金额（lamports）
-- `get_payment_amount_sol()`: 获取支付金额（SOL）
-- `is_successful()`: 检查交易是否成功
-- `is_token_transfer()`: 检查是否为代币转账
-- `get_net_amount()`: 获取扣除费用后的净金额
-- `is_high_value()`: 检查是否为高价值交易
+#[tokio::main]
+async fn main() -> Result<(), String> {
+let solana = Solana::new(Mode::MAIN).unwrap();
+let client = solana.client_arc();
+let scan = solana_network_sdk::scan::Scan::new(client.clone());
+let trade = solana_network_sdk::trade::Trade::new(client.clone());
+    let token_address = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"; // USDC
+    // 步骤1: 获取最新5个签名进行快速分析
+    println!("正在获取 {} 的最新签名...", token_address);
+    let latest_signatures = scan.get_last_signatures(token_address, 5).await?;
+    // 步骤2: 为每个签名获取详细的交易信息
+    for (i, signature) in latest_signatures.iter().enumerate() {
+        println!("\n{}. 处理签名: {}", i + 1, signature);
+        match trade.get_transaction_details(signature).await {
+            Ok(transaction) => {
+                let tx_info = solana_network_sdk::trade::TransactionInfo::from_encoded_transaction(
+                    &transaction,
+                    signature,
+                    "mainnet"
+                );
+                println!("   槽位: {}", tx_info.slot);
+                println!("   状态: {}", tx_info.status);
+                println!("   手续费: {} lamports", tx_info.fee);
+            }
+            Err(e) => println!("   获取详情错误: {}", e),
+        }
+    }
+    // 步骤3: 获取所有历史签名（分页，用于离线处理）
+    println!("\n正在获取所有历史签名（这可能需要一段时间）...");
+    let all_signatures = scan.get_all_signatures_by_address(
+        token_address,
+        Some(200),  // 200毫秒延迟
+        Some(1000), // 每批1000个
+    ).await?;
+    println!("总历史签名数: {}", all_signatures.len());
+    Ok(())
+}
+```
