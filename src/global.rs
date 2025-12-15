@@ -9,6 +9,7 @@ pub const SOLANA_ANKR_MAIN_NET_URL: &'static str = "https://rpc.ankr.com/solana"
 pub const SOL: &'static str = "So11111111111111111111111111111111111111112";
 pub const USDC: &'static str = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 pub const USDT: &'static str = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
+pub const USD_1: &'static str = "USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB";
 pub const RAY: &'static str = "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R";
 
 /// raydium v4 pool program id

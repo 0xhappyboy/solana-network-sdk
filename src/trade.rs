@@ -13,8 +13,8 @@ use solana_sdk::transaction::TransactionVersion;
 use solana_sdk::{message::Message, pubkey::Pubkey};
 use solana_transaction_status::option_serializer::OptionSerializer;
 use solana_transaction_status::{
-    EncodedConfirmedTransactionWithStatusMeta, EncodedTransaction, UiMessage,
-    UiParsedInstruction, UiTransactionEncoding, UiTransactionTokenBalance,
+    EncodedConfirmedTransactionWithStatusMeta, EncodedTransaction, UiMessage, UiParsedInstruction,
+    UiTransactionEncoding, UiTransactionTokenBalance,
 };
 
 use crate::global::{
@@ -683,16 +683,12 @@ impl TransactionInfo {
         if self.balance_change < 0 {
             return Some((SOL.to_string(), self.balance_change.abs() as u64));
         }
-        let deltas = build_signer_token_delta(
-            &self.pre_token_balances,
-            &self.post_token_balances,
-            &self.signer,
-        );
-        deltas
-            .into_iter()
-            .filter(|(_, d)| *d < 0)
-            .min_by_key(|(_, d)| *d)
-            .map(|(mint, d)| (mint, d.abs() as u64))
+        if let Some(amount) = self.get_pool_left_amount() {
+            if let Some(mint) = self.get_pool_left_address() {
+                return Some((mint, amount));
+            }
+        }
+        None
     }
 
     pub fn get_token_received_amount(&self) -> Option<(String, u64)> {
@@ -794,49 +790,45 @@ impl TransactionInfo {
     }
 
     pub fn get_pool_right_amount(&self) -> Option<u64> {
-        if let Some(address) = self.get_pool_right_address() {
-            if let Some(amount) = self.output_amount {
-                return Some(amount);
-            }
-            for log in &self.logs {
-                if log.contains("Output amount:") || log.contains("amountOut:") {
-                    let mut cleaned = log.to_string();
-                    cleaned = cleaned
-                        .replace("Output amount:", "")
-                        .replace("amountOut:", "");
-                    for word in cleaned.split_whitespace() {
-                        if let Ok(amount) =
-                            word.trim_matches(|c: char| !c.is_digit(10)).parse::<u64>()
-                        {
-                            if amount > 0 {
-                                return Some(amount);
-                            }
+        let address = self.get_pool_right_address()?;
+        if let Some(amount) = self.output_amount {
+            return Some(amount);
+        }
+        for log in &self.logs {
+            if log.contains("Output amount:") || log.contains("amountOut:") {
+                let cleaned = log.replace("Output amount:", "").replace("amountOut:", "");
+                for word in cleaned.split_whitespace() {
+                    if let Ok(amount) = word
+                        .trim_matches(|c: char| !c.is_ascii_digit())
+                        .parse::<u64>()
+                    {
+                        if amount > 0 {
+                            return Some(amount);
                         }
                     }
                 }
             }
-            for post_balance in &self.post_token_balances {
-                if post_balance.mint == address {
-                    let post_amount = post_balance
-                        .ui_token_amount
-                        .amount
-                        .parse::<u64>()
-                        .unwrap_or(0);
-                    let pre_amount = self
-                        .pre_token_balances
-                        .iter()
-                        .find(|b| b.mint == address && b.owner == post_balance.owner)
-                        .and_then(|b| b.ui_token_amount.amount.parse::<u64>().ok())
-                        .unwrap_or(0);
-                    if post_amount > pre_amount {
-                        return Some(post_amount - pre_amount);
-                    } else if post_amount > 0 && pre_amount == 0 {
-                        return Some(post_amount);
-                    }
+        }
+        let mut max_out: u64 = 0;
+        for pre in &self.pre_token_balances {
+            if pre.mint != address {
+                continue;
+            }
+            let pre_amount = pre.ui_token_amount.amount.parse::<u64>().unwrap_or(0);
+            let post_amount = self
+                .post_token_balances
+                .iter()
+                .find(|b| b.mint == address && b.owner == pre.owner)
+                .and_then(|b| b.ui_token_amount.amount.parse::<u64>().ok())
+                .unwrap_or(0);
+            if pre_amount > post_amount {
+                let delta = pre_amount - post_amount;
+                if delta > max_out {
+                    max_out = delta;
                 }
             }
         }
-        None
+        if max_out > 0 { Some(max_out) } else { None }
     }
 
     pub fn get_pool_left_address(&self) -> Option<String> {
