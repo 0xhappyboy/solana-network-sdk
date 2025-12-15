@@ -664,31 +664,126 @@ pub struct TransactionInfo {
 
 impl TransactionInfo {
     pub fn get_received_token(&self) -> Option<(String, u64)> {
+        if let Some(output_mint) = &self.output_mint {
+            if let Some(output_amount) = self.output_amount {
+                if output_amount > 0 {
+                    return Some((output_mint.clone(), output_amount));
+                }
+            }
+        }
         if self.balance_change > 0 {
             return Some((SOL.to_string(), self.balance_change as u64));
         }
-        let deltas = build_signer_token_delta(
-            &self.pre_token_balances,
-            &self.post_token_balances,
-            &self.signer,
-        );
-        deltas
-            .into_iter()
-            .filter(|(_, d)| *d > 0)
-            .max_by_key(|(_, d)| *d)
-            .map(|(mint, d)| (mint, d as u64))
-    }
-
-    pub fn get_spent_token(&self) -> Option<(String, u64)> {
-        if self.balance_change < 0 {
-            return Some((SOL.to_string(), self.balance_change.abs() as u64));
-        }
-        if let Some(amount) = self.get_pool_left_amount() {
-            if let Some(mint) = self.get_pool_left_address() {
+        let token_received = self.get_token_received_amount();
+        if let Some((mint, amount)) = token_received {
+            if amount > 0 {
                 return Some((mint, amount));
             }
         }
-        None
+        if self.is_swap {
+            if let Some(output_mint) = self.get_pool_right_address() {
+                if let Some(output_amount) = self.get_pool_right_amount() {
+                    if output_amount > 0 {
+                        return Some((output_mint, output_amount));
+                    }
+                }
+            }
+        }
+        let mut max_received_amount = 0u64;
+        let mut max_received_mint = None;
+        for post_balance in &self.post_token_balances {
+            let pre_amount = self
+                .pre_token_balances
+                .iter()
+                .find(|pre| pre.mint == post_balance.mint && pre.owner == post_balance.owner)
+                .and_then(|pre| pre.ui_token_amount.amount.parse::<u64>().ok())
+                .unwrap_or(0);
+            let post_amount = post_balance
+                .ui_token_amount
+                .amount
+                .parse::<u64>()
+                .unwrap_or(0);
+            if post_amount > pre_amount {
+                let received = post_amount - pre_amount;
+                if received > max_received_amount {
+                    max_received_amount = received;
+                    max_received_mint = Some(post_balance.mint.clone());
+                }
+            }
+        }
+        max_received_mint.map(|mint| (mint, max_received_amount))
+    }
+
+    pub fn get_spent_token(&self) -> Option<(String, u64)> {
+        if let Some(input_mint) = &self.input_mint {
+            if let Some(input_amount) = self.input_amount {
+                if input_amount > 0 {
+                    return Some((input_mint.clone(), input_amount));
+                }
+            }
+        }
+        if self.balance_change < 0 {
+            return Some((SOL.to_string(), self.balance_change.abs() as u64));
+        }
+        let token_spent = self.get_token_spent_amount();
+        if let Some((mint, amount)) = token_spent {
+            if amount > 0 {
+                return Some((mint, amount));
+            }
+        }
+        if self.is_swap {
+            if let Some(input_mint) = self.get_pool_left_address() {
+                if let Some(input_amount) = self.get_pool_left_amount() {
+                    if input_amount > 0 {
+                        return Some((input_mint, input_amount));
+                    }
+                }
+            }
+        }
+        for instruction in &self.instructions {
+            if instruction.program_id == "system" {
+                if let Ok(data) = serde_json::from_str::<serde_json::Value>(&instruction.data) {
+                    if let Some(obj) = data.as_object() {
+                        if let Some(type_str) = obj.get("type").and_then(|v| v.as_str()) {
+                            if type_str == "transfer" {
+                                if let Some(info) = obj.get("info") {
+                                    if let Some(lamports) =
+                                        info.get("lamports").and_then(|v| v.as_u64())
+                                    {
+                                        if lamports > 0 {
+                                            return Some((SOL.to_string(), lamports));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let mut max_spent_amount = 0u64;
+        let mut max_spent_mint = None;
+        for pre_balance in &self.pre_token_balances {
+            let post_amount = self
+                .post_token_balances
+                .iter()
+                .find(|post| post.mint == pre_balance.mint && post.owner == pre_balance.owner)
+                .and_then(|post| post.ui_token_amount.amount.parse::<u64>().ok())
+                .unwrap_or(0);
+            let pre_amount = pre_balance
+                .ui_token_amount
+                .amount
+                .parse::<u64>()
+                .unwrap_or(0);
+            if pre_amount > post_amount {
+                let spent = pre_amount - post_amount;
+                if spent > max_spent_amount {
+                    max_spent_amount = spent;
+                    max_spent_mint = Some(pre_balance.mint.clone());
+                }
+            }
+        }
+        max_spent_mint.map(|mint| (mint, max_spent_amount))
     }
 
     pub fn get_token_received_amount(&self) -> Option<(String, u64)> {
@@ -767,23 +862,30 @@ impl TransactionInfo {
                     }
                 }
             }
+            let mut max_amount = 0u64;
             for pre_balance in &self.pre_token_balances {
                 if pre_balance.mint == address {
-                    let pre_amount = pre_balance
-                        .ui_token_amount
-                        .amount
-                        .parse::<u64>()
-                        .unwrap_or(0);
                     let post_amount = self
                         .post_token_balances
                         .iter()
                         .find(|b| b.mint == address && b.owner == pre_balance.owner)
                         .and_then(|b| b.ui_token_amount.amount.parse::<u64>().ok())
                         .unwrap_or(0);
+                    let pre_amount = pre_balance
+                        .ui_token_amount
+                        .amount
+                        .parse::<u64>()
+                        .unwrap_or(0);
                     if pre_amount > post_amount {
-                        return Some(pre_amount - post_amount);
+                        let decrease = pre_amount - post_amount;
+                        if decrease > max_amount {
+                            max_amount = decrease;
+                        }
                     }
                 }
+            }
+            if max_amount > 0 {
+                return Some(max_amount);
             }
         }
         None
@@ -809,26 +911,32 @@ impl TransactionInfo {
                 }
             }
         }
-        let mut max_out: u64 = 0;
-        for pre in &self.pre_token_balances {
-            if pre.mint != address {
-                continue;
-            }
-            let pre_amount = pre.ui_token_amount.amount.parse::<u64>().unwrap_or(0);
-            let post_amount = self
-                .post_token_balances
-                .iter()
-                .find(|b| b.mint == address && b.owner == pre.owner)
-                .and_then(|b| b.ui_token_amount.amount.parse::<u64>().ok())
-                .unwrap_or(0);
-            if pre_amount > post_amount {
-                let delta = pre_amount - post_amount;
-                if delta > max_out {
-                    max_out = delta;
+        let mut max_amount = 0u64;
+        for post_balance in &self.post_token_balances {
+            if post_balance.mint == address {
+                let pre_amount = self
+                    .pre_token_balances
+                    .iter()
+                    .find(|b| b.mint == address && b.owner == post_balance.owner)
+                    .and_then(|b| b.ui_token_amount.amount.parse::<u64>().ok())
+                    .unwrap_or(0);
+                let post_amount = post_balance
+                    .ui_token_amount
+                    .amount
+                    .parse::<u64>()
+                    .unwrap_or(0);
+                if post_amount > pre_amount {
+                    let increase = post_amount - pre_amount;
+                    if increase > max_amount {
+                        max_amount = increase;
+                    }
                 }
             }
         }
-        if max_out > 0 { Some(max_out) } else { None }
+        if max_amount > 0 {
+            return Some(max_amount);
+        }
+        None
     }
 
     pub fn get_pool_left_address(&self) -> Option<String> {
