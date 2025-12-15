@@ -18,6 +18,6 @@ pub enum UnifiedError<T> {
 #[derive(Debug, Clone, Copy)]
 
 pub enum Direction {
-    In,  // received sol
-    Out, // output sol
+    Buy,
+    Sell,
 }

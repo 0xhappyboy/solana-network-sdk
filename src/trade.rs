@@ -13,7 +13,7 @@ use solana_sdk::transaction::TransactionVersion;
 use solana_sdk::{message::Message, pubkey::Pubkey};
 use solana_transaction_status::option_serializer::OptionSerializer;
 use solana_transaction_status::{
-    EncodedConfirmedTransactionWithStatusMeta, EncodedTransaction, UiInstruction, UiMessage,
+    EncodedConfirmedTransactionWithStatusMeta, EncodedTransaction, UiMessage,
     UiParsedInstruction, UiTransactionEncoding, UiTransactionTokenBalance,
 };
 
@@ -21,7 +21,9 @@ use crate::global::{
     METEORA_DAMM_V2_PROGRAM_ID, METEORA_DLMM_V2_PROGRAM_ID, METEORA_POOL_PROGRAM_ID,
     ORCA_WHIRLPOOLS_PROGRAM_ID, PUMP_AAM_PROGRAM_ID, PUMP_BOND_CURVE_PROGRAM_ID,
     RAYDIUM_CLMM_POOL_PROGRAM_ID, RAYDIUM_CPMM_POOL_PROGRAM_ID, RAYDIUM_V4_POOL_PROGRAM_ID, SOL,
+    USDC, USDT,
 };
+use crate::tool::trade::build_signer_token_delta;
 use crate::types::{Direction, UnifiedError, UnifiedResult};
 
 pub struct Trade {
@@ -658,62 +660,93 @@ pub struct TransactionInfo {
     pub updated_at: u64, // Record update timestamp
     pub source: String,  // Data source
     pub confidence: f64, // Data confidence level 0.0-1.0
-    // trade direction
-    pub direction: Option<Direction>,
 }
 
 impl TransactionInfo {
     pub fn get_received_token(&self) -> Option<(String, u64)> {
         if self.balance_change > 0 {
-            let amount = self.balance_change as u64;
-            if !self.is_token_transfer() {
-                return Some((SOL.to_string(), amount));
-            }
-            let token_received = self.get_token_received_amount();
-            if let Some((token_address, token_amount)) = token_received {
-                return Some((token_address, token_amount));
-            }
-            return Some((SOL.to_string(), amount));
+            return Some((SOL.to_string(), self.balance_change as u64));
         }
-        let token_received = self.get_token_received_amount();
-        if let Some((token_address, amount)) = token_received {
-            if amount > 0 {
-                return Some((token_address, amount));
-            }
-        }
-        if self.is_swap {
-            if let Some((address, amount)) = self.extract_swap_output_from_logs() {
-                return Some((address, amount));
-            }
-        }
-        None
+        let deltas = build_signer_token_delta(
+            &self.pre_token_balances,
+            &self.post_token_balances,
+            &self.signer,
+        );
+        deltas
+            .into_iter()
+            .filter(|(_, d)| *d > 0)
+            .max_by_key(|(_, d)| *d)
+            .map(|(mint, d)| (mint, d as u64))
     }
 
     pub fn get_spent_token(&self) -> Option<(String, u64)> {
-        use crate::global::{SOL, USDC, USDT};
         if self.balance_change < 0 {
-            let amount = self.balance_change.abs() as u64;
-            if !self.is_token_transfer() {
-                return Some((SOL.to_string(), amount));
-            }
-            let token_spent = self.get_token_spent_amount();
-            if let Some((token_address, token_amount)) = token_spent {
-                return Some((token_address, token_amount));
-            }
-            return Some((SOL.to_string(), amount));
+            return Some((SOL.to_string(), self.balance_change.abs() as u64));
         }
-        let token_spent = self.get_token_spent_amount();
-        if let Some((token_address, amount)) = token_spent {
-            if amount > 0 {
-                return Some((token_address, amount));
+        let deltas = build_signer_token_delta(
+            &self.pre_token_balances,
+            &self.post_token_balances,
+            &self.signer,
+        );
+        deltas
+            .into_iter()
+            .filter(|(_, d)| *d < 0)
+            .min_by_key(|(_, d)| *d)
+            .map(|(mint, d)| (mint, d.abs() as u64))
+    }
+
+    pub fn get_token_received_amount(&self) -> Option<(String, u64)> {
+        let mut max_amount = 0u64;
+        let mut max_token = None;
+        for post_balance in &self.post_token_balances {
+            let mint = &post_balance.mint;
+            let pre_amount = self
+                .pre_token_balances
+                .iter()
+                .find(|b| &b.mint == mint && b.owner == post_balance.owner)
+                .and_then(|b| b.ui_token_amount.amount.parse::<u64>().ok())
+                .unwrap_or(0);
+            let post_amount = post_balance
+                .ui_token_amount
+                .amount
+                .parse::<u64>()
+                .unwrap_or(0);
+            if post_amount > pre_amount {
+                let increase = post_amount - pre_amount;
+                if increase > max_amount {
+                    max_amount = increase;
+                    max_token = Some(mint.clone());
+                }
             }
         }
-        if self.is_swap {
-            if let Some((address, amount)) = self.extract_swap_input_from_logs() {
-                return Some((address, amount));
+        max_token.map(|token| (token, max_amount))
+    }
+
+    pub fn get_token_spent_amount(&self) -> Option<(String, u64)> {
+        let mut max_amount = 0u64;
+        let mut max_token = None;
+        for pre_balance in &self.pre_token_balances {
+            let mint = &pre_balance.mint;
+            let post_amount = self
+                .post_token_balances
+                .iter()
+                .find(|b| &b.mint == mint && b.owner == pre_balance.owner)
+                .and_then(|b| b.ui_token_amount.amount.parse::<u64>().ok())
+                .unwrap_or(0);
+            let pre_amount = pre_balance
+                .ui_token_amount
+                .amount
+                .parse::<u64>()
+                .unwrap_or(0);
+            if pre_amount > post_amount {
+                let decrease = pre_amount - post_amount;
+                if decrease > max_amount {
+                    max_amount = decrease;
+                    max_token = Some(mint.clone());
+                }
             }
         }
-        None
+        max_token.map(|token| (token, max_amount))
     }
 
     pub fn get_pool_left_amount(&self) -> Option<u64> {
@@ -899,60 +932,6 @@ impl TransactionInfo {
         None
     }
 
-    fn get_token_received_amount(&self) -> Option<(String, u64)> {
-        let mut max_amount = 0u64;
-        let mut max_token = None;
-        for post_balance in &self.post_token_balances {
-            let mint = &post_balance.mint;
-            let pre_amount = self
-                .pre_token_balances
-                .iter()
-                .find(|b| &b.mint == mint && b.owner == post_balance.owner)
-                .and_then(|b| b.ui_token_amount.amount.parse::<u64>().ok())
-                .unwrap_or(0);
-            let post_amount = post_balance
-                .ui_token_amount
-                .amount
-                .parse::<u64>()
-                .unwrap_or(0);
-            if post_amount > pre_amount {
-                let increase = post_amount - pre_amount;
-                if increase > max_amount {
-                    max_amount = increase;
-                    max_token = Some(mint.clone());
-                }
-            }
-        }
-        max_token.map(|token| (token, max_amount))
-    }
-
-    fn get_token_spent_amount(&self) -> Option<(String, u64)> {
-        let mut max_amount = 0u64;
-        let mut max_token = None;
-        for pre_balance in &self.pre_token_balances {
-            let mint = &pre_balance.mint;
-            let post_amount = self
-                .post_token_balances
-                .iter()
-                .find(|b| &b.mint == mint && b.owner == pre_balance.owner)
-                .and_then(|b| b.ui_token_amount.amount.parse::<u64>().ok())
-                .unwrap_or(0);
-            let pre_amount = pre_balance
-                .ui_token_amount
-                .amount
-                .parse::<u64>()
-                .unwrap_or(0);
-            if pre_amount > post_amount {
-                let decrease = pre_amount - post_amount;
-                if decrease > max_amount {
-                    max_amount = decrease;
-                    max_token = Some(mint.clone());
-                }
-            }
-        }
-        max_token.map(|token| (token, max_amount))
-    }
-
     fn extract_swap_input_from_logs(&self) -> Option<(String, u64)> {
         for log in &self.logs {
             if log.contains("Input amount:")
@@ -1053,23 +1032,69 @@ impl TransactionInfo {
     }
 
     pub fn get_pool_left_amount_sol(&self) -> Option<f64> {
-        self.get_pool_left_amount()
-            .map(|lamports| lamports as f64 / LAMPORTS_PER_SOL as f64)
+        self.get_pool_left_amount().and_then(|lamports| {
+            let decimals = self.get_token_decimals_for_left_pool()?;
+            Some(lamports as f64 / 10_u64.pow(decimals as u32) as f64)
+        })
     }
 
     pub fn get_pool_right_amount_sol(&self) -> Option<f64> {
-        self.get_pool_right_amount()
-            .map(|lamports| lamports as f64 / LAMPORTS_PER_SOL as f64)
+        self.get_pool_right_amount().and_then(|lamports| {
+            let decimals = self.get_token_decimals_for_right_pool()?;
+            Some(lamports as f64 / 10_u64.pow(decimals as u32) as f64)
+        })
     }
 
     pub fn get_received_token_sol(&self) -> Option<(String, f64)> {
-        self.get_received_token()
-            .map(|(address, lamports)| (address, lamports as f64 / LAMPORTS_PER_SOL as f64))
+        self.get_received_token().and_then(|(address, amount)| {
+            let decimals = self.get_token_decimals_for_mint(&address)?;
+            Some((address, amount as f64 / 10_u64.pow(decimals as u32) as f64))
+        })
     }
 
     pub fn get_spent_token_sol(&self) -> Option<(String, f64)> {
-        self.get_spent_token()
-            .map(|(address, lamports)| (address, lamports as f64 / LAMPORTS_PER_SOL as f64))
+        self.get_spent_token().and_then(|(address, amount)| {
+            let decimals = self.get_token_decimals_for_mint(&address)?;
+            Some((address, amount as f64 / 10_u64.pow(decimals as u32) as f64))
+        })
+    }
+
+    fn get_token_decimals_for_left_pool(&self) -> Option<u8> {
+        if let Some(address) = self.get_pool_left_address() {
+            return self.get_token_decimals_for_mint(&address);
+        }
+        None
+    }
+
+    fn get_token_decimals_for_right_pool(&self) -> Option<u8> {
+        if let Some(address) = self.get_pool_right_address() {
+            return self.get_token_decimals_for_mint(&address);
+        }
+        None
+    }
+
+    fn get_token_decimals_for_mint(&self, mint: &str) -> Option<u8> {
+        use crate::global::SOL;
+        if mint == SOL {
+            return Some(9);
+        }
+        use crate::global::{USDC, USDT};
+        if mint == USDC {
+            return Some(6);
+        }
+        if mint == USDT {
+            return Some(6);
+        }
+        for balance in self
+            .pre_token_balances
+            .iter()
+            .chain(&self.post_token_balances)
+        {
+            if balance.mint == mint {
+                return Some(balance.ui_token_amount.decimals);
+            }
+        }
+        None
     }
 
     pub fn from_encoded_transaction(
@@ -1104,16 +1129,6 @@ impl TransactionInfo {
             };
         }
         Self::parse_transaction_content(&mut info, tx);
-        // trading direction calculation
-        if info.from != "unknown" && info.to != "unknown" {
-            if info.balance_change > 0 {
-                // In DEX trading, "in" means buying (you receive tokens and pay SOL).
-                info.direction = Some(Direction::In);
-            } else if info.balance_change < 0 {
-                // In DEX trading, "out" means selling (you pay tokens and receive SOL).
-                info.direction = Some(Direction::Out);
-            }
-        }
         info.created_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -1984,6 +1999,18 @@ impl TransactionInfo {
     pub fn get_payment_amount_sol(&self) -> f64 {
         self.value_sol
     }
+
+    /// get trade direction
+    pub fn getDirection(&self) -> Direction {
+        if (self.get_spent_token_sol().unwrap().0 == USDC
+            || self.get_spent_token_sol().unwrap().0 == USDT
+            || self.get_spent_token_sol().unwrap().0 == SOL)
+        {
+            Direction::Buy
+        } else {
+            Direction::Sell
+        }
+    }
 }
 
 impl Default for TransactionInfo {
@@ -2068,7 +2095,6 @@ impl Default for TransactionInfo {
             updated_at: 0,
             source: "rpc".to_string(),
             confidence: 1.0,
-            direction: None,
         }
     }
 }

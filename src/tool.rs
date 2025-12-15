@@ -1,3 +1,38 @@
+pub mod trade {
+    use std::collections::HashMap;
+
+    use crate::trade::TokenBalance;
+
+    pub fn build_signer_token_delta(
+        pre: &[TokenBalance],
+        post: &[TokenBalance],
+        signer: &str,
+    ) -> HashMap<String, i128> {
+        let mut pre_map = HashMap::<String, i128>::new();
+        let mut post_map = HashMap::<String, i128>::new();
+        for b in pre {
+            if b.owner == signer {
+                let amt = b.ui_token_amount.amount.parse::<i128>().unwrap();
+                *pre_map.entry(b.mint.clone()).or_insert(0) += amt;
+            }
+        }
+        for b in post {
+            if b.owner == signer {
+                let amt = b.ui_token_amount.amount.parse::<i128>().unwrap();
+                *post_map.entry(b.mint.clone()).or_insert(0) += amt;
+            }
+        }
+        let mut delta = HashMap::new();
+        for mint in pre_map.keys().chain(post_map.keys()) {
+            let d = post_map.get(mint).unwrap_or(&0) - pre_map.get(mint).unwrap_or(&0);
+            if d != 0 {
+                delta.insert(mint.clone(), d);
+            }
+        }
+        delta
+    }
+}
+
 pub mod wallet {
     /// convert the private key in base58 format to a byte array
     /// # params
