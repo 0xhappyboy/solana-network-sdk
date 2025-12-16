@@ -23,7 +23,6 @@ use crate::global::{
     RAYDIUM_CLMM_POOL_PROGRAM_ID, RAYDIUM_CPMM_POOL_PROGRAM_ID, RAYDIUM_V4_POOL_PROGRAM_ID, SOL,
     USDC, USDT,
 };
-use crate::tool::trade::build_signer_token_delta;
 use crate::types::{Direction, UnifiedError, UnifiedResult};
 
 pub struct Trade {
@@ -664,15 +663,14 @@ pub struct TransactionInfo {
 
 impl TransactionInfo {
     pub fn get_received_token(&self) -> Option<(String, u64)> {
-        if self.is_swap {
-            if let Some(right_mint) = self.get_pool_right_address() {
-                if let Some(amount) = self.get_pool_right_amount() {
-                    if amount > 0 {
-                        return Some((right_mint, amount));
-                    }
+        if let Some(right_mint) = self.get_pool_right_address() {
+            if let Some(amount) = self.get_pool_right_amount() {
+                if amount > 0 {
+                    return Some((right_mint, amount));
                 }
             }
         }
+        // Check output_mint and output_amount
         if let Some(output_mint) = &self.output_mint {
             if let Some(output_amount) = self.output_amount {
                 if output_amount > 0 {
@@ -680,6 +678,7 @@ impl TransactionInfo {
                 }
             }
         }
+        // Check SOL balance changes
         if self.balance_change > 0 {
             use crate::global::SOL;
             return Some((SOL.to_string(), self.balance_change as u64));
@@ -688,15 +687,14 @@ impl TransactionInfo {
     }
 
     pub fn get_spent_token(&self) -> Option<(String, u64)> {
-        if self.is_swap {
-            if let Some(left_mint) = self.get_pool_left_address() {
-                if let Some(amount) = self.get_pool_left_amount() {
-                    if amount > 0 {
-                        return Some((left_mint, amount));
-                    }
+        if let Some(left_mint) = self.get_pool_left_address() {
+            if let Some(amount) = self.get_pool_left_amount() {
+                if amount > 0 {
+                    return Some((left_mint, amount));
                 }
             }
         }
+        // Check input_mint and input_amount
         if let Some(input_mint) = &self.input_mint {
             if let Some(input_amount) = self.input_amount {
                 if input_amount > 0 {
@@ -704,10 +702,12 @@ impl TransactionInfo {
                 }
             }
         }
+        // Check SOL balance changes
         if self.balance_change < 0 {
             use crate::global::SOL;
             return Some((SOL.to_string(), self.balance_change.abs() as u64));
         }
+        // Check system transfer instructions
         for instruction in &self.instructions {
             if instruction.program_id == "system" {
                 if let Ok(data) = serde_json::from_str::<serde_json::Value>(&instruction.data) {
@@ -732,7 +732,6 @@ impl TransactionInfo {
         }
         self.get_token_spent_amount()
     }
-
     pub fn get_token_received_amount(&self) -> Option<(String, u64)> {
         let mut max_amount = 0u64;
         let mut max_token = None;
@@ -788,6 +787,21 @@ impl TransactionInfo {
     }
 
     pub fn get_pool_left_amount(&self) -> Option<u64> {
+        // First, check if the left pool address is SOL/USDC/USDT/USD1.
+        if let Some(left_address) = self.get_pool_left_address() {
+            use crate::global::{SOL, USD_1, USDC, USDT};
+            // Check if the address needs to use the maximum value.
+            let is_common_token = left_address == SOL
+                || left_address == USDC
+                || left_address == USDT
+                || left_address == USD_1;
+            if is_common_token {
+                // For these four addresses, find the maximum amount of tokens corresponding to them.
+                if let Some(max_amount) = self.get_max_amount_for_mint(&left_address) {
+                    return Some(max_amount);
+                }
+            }
+        }
         if let Some(address) = self.get_pool_left_address() {
             if let Some(amount) = self.input_amount {
                 return Some(amount);
@@ -839,6 +853,20 @@ impl TransactionInfo {
     }
 
     pub fn get_pool_right_amount(&self) -> Option<u64> {
+        // First, check if the right pool address is SOL/USDC/USDT/USD1.
+        if let Some(right_address) = self.get_pool_right_address() {
+            use crate::global::{SOL, USD_1, USDC, USDT};
+            // Check if the address needs to use the maximum value.
+            let is_common_token = right_address == SOL
+                || right_address == USDC
+                || right_address == USDT
+                || right_address == USD_1;
+            if is_common_token {
+                if let Some(max_amount) = self.get_max_amount_for_mint(&right_address) {
+                    return Some(max_amount);
+                }
+            }
+        }
         let address = self.get_pool_right_address()?;
         if let Some(amount) = self.output_amount {
             return Some(amount);
@@ -884,6 +912,91 @@ impl TransactionInfo {
             return Some(max_amount);
         }
         None
+    }
+
+    // Get the maximum amount of a specified token address
+    fn get_max_amount_for_mint(&self, mint: &str) -> Option<u64> {
+        use crate::global::SOL;
+        // Extract the maximum amount from the log.
+        let mut max_amount = 0u64;
+        // Find the maximum amount corresponding to the token in the log.
+        for log in &self.logs {
+            if log.contains(mint) {
+                // Find the number before the token name
+                if let Some(mint_index) = log.find(mint) {
+                    // Search for the most recent number
+                    let before_mint = &log[..mint_index];
+                    let parts: Vec<&str> = before_mint.split_whitespace().collect();
+                    // Find the first number from back to front.
+                    for part in parts.iter().rev() {
+                        let cleaned = part.replace(',', "");
+                        if let Ok(amount_f64) = cleaned.parse::<f64>() {
+                            let amount = if mint == SOL {
+                                (amount_f64 * LAMPORTS_PER_SOL as f64) as u64
+                            } else {
+                                (amount_f64 * 1_000_000.0) as u64
+                            };
+
+                            if amount > max_amount {
+                                max_amount = amount;
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        // Check received amount (for the right pool).
+        // Find the largest amount from changes in token balance.
+        for post_balance in &self.post_token_balances {
+            if post_balance.mint == mint {
+                let pre_amount = self
+                    .pre_token_balances
+                    .iter()
+                    .find(|b| b.mint == mint && b.owner == post_balance.owner)
+                    .and_then(|b| b.ui_token_amount.amount.parse::<u64>().ok())
+                    .unwrap_or(0);
+                let post_amount = post_balance
+                    .ui_token_amount
+                    .amount
+                    .parse::<u64>()
+                    .unwrap_or(0);
+
+                if post_amount > pre_amount {
+                    let increase = post_amount - pre_amount;
+                    if increase > max_amount {
+                        max_amount = increase;
+                    }
+                }
+            }
+        }
+        // Check the cost (for the left pool).
+        for pre_balance in &self.pre_token_balances {
+            if pre_balance.mint == mint {
+                let post_amount = self
+                    .post_token_balances
+                    .iter()
+                    .find(|b| b.mint == mint && b.owner == pre_balance.owner)
+                    .and_then(|b| b.ui_token_amount.amount.parse::<u64>().ok())
+                    .unwrap_or(0);
+                let pre_amount = pre_balance
+                    .ui_token_amount
+                    .amount
+                    .parse::<u64>()
+                    .unwrap_or(0);
+                if pre_amount > post_amount {
+                    let decrease = pre_amount - post_amount;
+                    if decrease > max_amount {
+                        max_amount = decrease;
+                    }
+                }
+            }
+        }
+        if max_amount > 0 {
+            Some(max_amount)
+        } else {
+            None
+        }
     }
 
     pub fn get_pool_left_address(&self) -> Option<String> {
@@ -973,104 +1086,6 @@ impl TransactionInfo {
                 let trimmed = word.trim_matches(|c: char| !c.is_alphanumeric());
                 if trimmed.len() == 44 && trimmed.chars().all(|c| c.is_alphanumeric()) {
                     return Some(trimmed.to_string());
-                }
-            }
-        }
-        None
-    }
-
-    fn extract_swap_input_from_logs(&self) -> Option<(String, u64)> {
-        for log in &self.logs {
-            if log.contains("Input amount:")
-                || log.contains("amountIn:")
-                || log.contains("fromMint")
-            {
-                let mut address = None;
-                let mut amount = None;
-                if log.contains("fromMint") {
-                    let parts: Vec<&str> = log.split("fromMint").collect();
-                    if parts.len() > 1 {
-                        let text = parts[1];
-                        for word in text.split_whitespace() {
-                            if word.len() == 44 && word.chars().all(|c| c.is_alphanumeric()) {
-                                address = Some(word.to_string());
-                                break;
-                            }
-                        }
-                    }
-                }
-                if log.contains("amountIn:") {
-                    let parts: Vec<&str> = log.split("amountIn:").collect();
-                    if parts.len() > 1 {
-                        let text = parts[1].trim();
-                        if let Ok(value) =
-                            text.split_whitespace().next().unwrap_or("0").parse::<u64>()
-                        {
-                            amount = Some(value);
-                        }
-                    }
-                } else if log.contains("Input amount:") {
-                    let parts: Vec<&str> = log.split("Input amount:").collect();
-                    if parts.len() > 1 {
-                        let text = parts[1].trim();
-                        if let Ok(value) =
-                            text.split_whitespace().next().unwrap_or("0").parse::<u64>()
-                        {
-                            amount = Some(value);
-                        }
-                    }
-                }
-                if let (Some(addr), Some(amt)) = (address, amount) {
-                    return Some((addr, amt));
-                }
-            }
-        }
-        None
-    }
-
-    fn extract_swap_output_from_logs(&self) -> Option<(String, u64)> {
-        for log in &self.logs {
-            if log.contains("Output amount:")
-                || log.contains("amountOut:")
-                || log.contains("toMint")
-            {
-                let mut address = None;
-                let mut amount = None;
-                if log.contains("toMint") {
-                    let parts: Vec<&str> = log.split("toMint").collect();
-                    if parts.len() > 1 {
-                        let text = parts[1];
-                        for word in text.split_whitespace() {
-                            if word.len() == 44 && word.chars().all(|c| c.is_alphanumeric()) {
-                                address = Some(word.to_string());
-                                break;
-                            }
-                        }
-                    }
-                }
-                if log.contains("amountOut:") {
-                    let parts: Vec<&str> = log.split("amountOut:").collect();
-                    if parts.len() > 1 {
-                        let text = parts[1].trim();
-                        if let Ok(value) =
-                            text.split_whitespace().next().unwrap_or("0").parse::<u64>()
-                        {
-                            amount = Some(value);
-                        }
-                    }
-                } else if log.contains("Output amount:") {
-                    let parts: Vec<&str> = log.split("Output amount:").collect();
-                    if parts.len() > 1 {
-                        let text = parts[1].trim();
-                        if let Ok(value) =
-                            text.split_whitespace().next().unwrap_or("0").parse::<u64>()
-                        {
-                            amount = Some(value);
-                        }
-                    }
-                }
-                if let (Some(addr), Some(amt)) = (address, amount) {
-                    return Some((addr, amt));
                 }
             }
         }
