@@ -184,8 +184,8 @@ impl Solana {
     }
 
     /// create account
-    pub fn create_account(&self) -> Account {
-        Account::new(self.client_arc())
+    pub fn create_account(&self, address: &str) -> Account {
+        Account::new(self.client_arc(), address)
     }
     /// create trade
     pub fn create_trade(&self) -> Trade {
