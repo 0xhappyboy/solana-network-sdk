@@ -1,6 +1,6 @@
 [package]
 name = "solana-network-sdk"
-version = "0.3.6"
+version = "0.3.8"
 edition = "2024"
 authors = ["happyboy <superhappyboy1995@gmail.com>"]
 description = "Implemented most of the commonly used practical transaction-related functions on the Solana network."

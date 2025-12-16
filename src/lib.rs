@@ -15,7 +15,7 @@ use std::{str::FromStr, sync::Arc};
 use crate::{
     account::Account,
     global::{SOLANA_DEV_NET_URL, SOLANA_OFFICIAL_MAIN_NET_URL, SOLANA_TEST_NET_URL},
-    trade::{Trade},
+    trade::{Trade, TransactionInfo},
     types::{Mode, UnifiedError, UnifiedResult},
 };
 

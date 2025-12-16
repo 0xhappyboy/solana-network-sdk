@@ -2643,7 +2643,7 @@ impl Default for TransactionInfo {
 }
 
 impl TransactionInfo {
-    pub fn get_pump_bond_transaction_info(&self) -> PumpBondCurveTransactionInfo {
+    pub fn get_pump_bond_curve_transaction_info(&self) -> PumpBondCurveTransactionInfo {
         PumpBondCurveTransactionInfo::new(self)
     }
 }

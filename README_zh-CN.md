@@ -75,6 +75,22 @@ async fn a() {
 }
 ```
 
+### 获取 pump.fun 交易数据结构中的实际增加值与代币地址和减少值与代币地址
+
+```rust
+#[tokio::test]
+async fn a() {
+    let solana = Solana::new(Mode::MAIN);
+    let trade = solana.unwrap().create_trade();
+    let t3: Result<TransactionInfo, UnifiedError<String>> = trae.get_transaction_display_details(
+        "5cCVC1KMfaC1QLYeuwuSL5eQQZxZMn8R9rwqAxBkf8tE7FrmkzcTF7qNpaJUGFU5uyud7kr5ESsx8Tn1rUHmrAqu",
+    ).await;
+    let pump_bond_curve = t3.as_ref().unwrap().get_pump_bond_curve_transaction_info();
+    println!("increase :{:?} ", pump_bond_curve.get_pump_received_token_sol()); // increase.0 = 2og84mzRgrM4Q1sWZAkVAhZoszb7uo6oW9SjKLj5pump; increase.1 = 3908476.581809
+    println!("reduce :{:?} ", pump_bond_curve.get_pump_spent_token_sol()); // reduce.0 = So11111111111111111111111111111111111111112; reduce.1 = 0.508921875
+}
+```
+
 ### 估算交易费用
 
 ```rust
