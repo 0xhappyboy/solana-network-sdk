@@ -663,75 +663,112 @@ pub struct TransactionInfo {
 
 impl TransactionInfo {
     pub fn get_received_token(&self) -> Option<(String, u64)> {
-        if let Some(right_mint) = self.get_pool_right_address() {
-            if let Some(amount) = self.get_pool_right_amount() {
-                if amount > 0 {
-                    return Some((right_mint, amount));
+        if let Some(left_addr) = self.get_pool_left_address() {
+            if let Some(left_amount) = self.get_pool_left_amount() {
+                if self.is_token_received(&left_addr) {
+                    return Some((left_addr, left_amount));
                 }
             }
         }
-        // Check output_mint and output_amount
-        if let Some(output_mint) = &self.output_mint {
-            if let Some(output_amount) = self.output_amount {
-                if output_amount > 0 {
-                    return Some((output_mint.clone(), output_amount));
+        if let Some(right_addr) = self.get_pool_right_address() {
+            if let Some(right_amount) = self.get_pool_right_amount() {
+                if self.is_token_received(&right_addr) {
+                    return Some((right_addr, right_amount));
                 }
             }
         }
-        // Check SOL balance changes
-        if self.balance_change > 0 {
-            use crate::global::SOL;
-            return Some((SOL.to_string(), self.balance_change as u64));
+        if let Some(right_addr) = self.get_pool_right_address() {
+            if let Some(right_amount) = self.get_pool_right_amount() {
+                return Some((right_addr, right_amount));
+            }
         }
-        self.get_token_received_amount()
+        None
     }
 
     pub fn get_spent_token(&self) -> Option<(String, u64)> {
-        if let Some(left_mint) = self.get_pool_left_address() {
-            if let Some(amount) = self.get_pool_left_amount() {
-                if amount > 0 {
-                    return Some((left_mint, amount));
+        if let Some((received_addr, _)) = self.get_received_token() {
+            if let Some(left_addr) = self.get_pool_left_address() {
+                if left_addr != received_addr {
+                    if let Some(left_amount) = self.get_pool_left_amount() {
+                        return Some((left_addr, left_amount));
+                    }
                 }
             }
-        }
-        // Check input_mint and input_amount
-        if let Some(input_mint) = &self.input_mint {
-            if let Some(input_amount) = self.input_amount {
-                if input_amount > 0 {
-                    return Some((input_mint.clone(), input_amount));
-                }
-            }
-        }
-        // Check SOL balance changes
-        if self.balance_change < 0 {
-            use crate::global::SOL;
-            return Some((SOL.to_string(), self.balance_change.abs() as u64));
-        }
-        // Check system transfer instructions
-        for instruction in &self.instructions {
-            if instruction.program_id == "system" {
-                if let Ok(data) = serde_json::from_str::<serde_json::Value>(&instruction.data) {
-                    if let Some(obj) = data.as_object() {
-                        if let Some(type_str) = obj.get("type").and_then(|v| v.as_str()) {
-                            if type_str == "transfer" {
-                                if let Some(info) = obj.get("info") {
-                                    if let Some(lamports) =
-                                        info.get("lamports").and_then(|v| v.as_u64())
-                                    {
-                                        if lamports > 0 {
-                                            use crate::global::SOL;
-                                            return Some((SOL.to_string(), lamports));
-                                        }
-                                    }
-                                }
-                            }
-                        }
+            if let Some(right_addr) = self.get_pool_right_address() {
+                if right_addr != received_addr {
+                    if let Some(right_amount) = self.get_pool_right_amount() {
+                        return Some((right_addr, right_amount));
                     }
                 }
             }
         }
-        self.get_token_spent_amount()
+        if let Some(left_addr) = self.get_pool_left_address() {
+            if let Some(left_amount) = self.get_pool_left_amount() {
+                if self.is_token_spent(&left_addr) {
+                    return Some((left_addr, left_amount));
+                }
+            }
+        }
+        if let Some(right_addr) = self.get_pool_right_address() {
+            if let Some(right_amount) = self.get_pool_right_amount() {
+                if self.is_token_spent(&right_addr) {
+                    return Some((right_addr, right_amount));
+                }
+            }
+        }
+        None
     }
+
+    fn is_token_received(&self, mint: &str) -> bool {
+        for post_balance in &self.post_token_balances {
+            if post_balance.mint == mint {
+                if let Some(pre_balance) = self
+                    .pre_token_balances
+                    .iter()
+                    .find(|b| b.mint == mint && b.owner == post_balance.owner)
+                {
+                    let pre_amount = pre_balance
+                        .ui_token_amount
+                        .amount
+                        .parse::<u64>()
+                        .unwrap_or(0);
+                    let post_amount = post_balance
+                        .ui_token_amount
+                        .amount
+                        .parse::<u64>()
+                        .unwrap_or(0);
+                    return post_amount > pre_amount;
+                }
+            }
+        }
+        false
+    }
+
+    fn is_token_spent(&self, mint: &str) -> bool {
+        for pre_balance in &self.pre_token_balances {
+            if pre_balance.mint == mint {
+                if let Some(post_balance) = self
+                    .post_token_balances
+                    .iter()
+                    .find(|b| b.mint == mint && b.owner == pre_balance.owner)
+                {
+                    let pre_amount = pre_balance
+                        .ui_token_amount
+                        .amount
+                        .parse::<u64>()
+                        .unwrap_or(0);
+                    let post_amount = post_balance
+                        .ui_token_amount
+                        .amount
+                        .parse::<u64>()
+                        .unwrap_or(0);
+                    return pre_amount > post_amount;
+                }
+            }
+        }
+        false
+    }
+
     pub fn get_token_received_amount(&self) -> Option<(String, u64)> {
         let mut max_amount = 0u64;
         let mut max_token = None;
