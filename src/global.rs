@@ -12,6 +12,7 @@ pub const USDT: &'static str = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
 pub const USD_1: &'static str = "USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB";
 pub const RAY: &'static str = "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R";
 pub const QUOTES: [&str; 4] = [SOL, USDT, USDC, USD_1];
+pub const SPL_TOKEN_PROGRAM_V1: &'static str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 
 /// raydium v4 pool program id
 pub const RAYDIUM_V4_POOL_PROGRAM_ID: &'static str = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8";

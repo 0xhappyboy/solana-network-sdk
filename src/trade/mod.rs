@@ -1,6 +1,9 @@
+pub mod pump;
 use std::vec;
 use std::{str::FromStr, sync::Arc};
 
+use base64::Engine;
+use base64::engine::general_purpose;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use solana_client::{
@@ -23,7 +26,8 @@ use crate::global::{
     RAYDIUM_CLMM_POOL_PROGRAM_ID, RAYDIUM_CPMM_POOL_PROGRAM_ID, RAYDIUM_V4_POOL_PROGRAM_ID, SOL,
     USDC, USDT,
 };
-use crate::types::{Direction, UnifiedError, UnifiedResult};
+use crate::trade::pump::PumpBondCurveTransactionInfo;
+use crate::types::{DexProgramType, Direction, TransactionType, UnifiedError, UnifiedResult};
 
 pub struct Trade {
     client: Arc<RpcClient>,
@@ -603,7 +607,7 @@ pub struct TransactionInfo {
     pub is_confirmed: bool,
     pub is_finalized: bool,
     // Transaction Type Related
-    pub transaction_type: String, // "transfer", "token_transfer", "program_interaction"
+    pub transaction_type: Option<TransactionType>,
     pub program_id: String,
     pub instructions_count: u64,
     pub inner_instructions_count: u64, // Number of inner instructions
@@ -632,14 +636,14 @@ pub struct TransactionInfo {
     pub nft_symbol: Option<String>,
     // DEX/DeFi Related
     pub is_swap: bool,
-    pub dex_program_id: Option<String>,        // DEX program id
-    pub dex_program_name: Option<String>,      // DEX program name
-    pub dex_pool_program_id: Option<String>,   // DEX program pool id
-    pub dex_pool_program_name: Option<String>, // DEX program pool name
-    pub input_mint: Option<String>,            // Input token mint
-    pub output_mint: Option<String>,           // Output token mint
-    pub input_amount: Option<u64>,             // Input amount
-    pub output_amount: Option<u64>,            // Output amount
+    pub dex_program_id: Option<String>,           // DEX program id
+    pub dex_program_type: Option<DexProgramType>, // DEX program name
+    pub dex_pool_program_id: Option<String>,      // DEX program pool id
+    pub dex_pool_program_name: Option<String>,    // DEX program pool name
+    pub input_mint: Option<String>,               // Input token mint
+    pub output_mint: Option<String>,              // Output token mint
+    pub input_amount: Option<u64>,                // Input amount
+    pub output_amount: Option<u64>,               // Output amount
     // Business Extension Fields
     pub memo: Option<String>,
     pub timestamp: Option<u64>,
@@ -1014,7 +1018,7 @@ impl TransactionInfo {
                     if log.contains("Program data:") {
                         if let Some(base64_start) = log.find("Program data:") {
                             let base64_str = &log[base64_start + 13..].trim();
-                            if let Ok(decoded) = base64::decode(base64_str) {
+                            if let Ok(decoded) = general_purpose::STANDARD.decode(base64_str) {
                                 if decoded.len() >= 40 {
                                     for offset in (24..decoded.len() - 8).step_by(8) {
                                         if offset + 8 <= decoded.len() {
@@ -1285,7 +1289,7 @@ impl TransactionInfo {
                     if log.contains("Program data:") {
                         if let Some(base64_start) = log.find("Program data:") {
                             let base64_str = &log[base64_start + 13..].trim();
-                            if let Ok(decoded) = base64::decode(base64_str) {
+                            if let Ok(decoded) = general_purpose::STANDARD.decode(base64_str) {
                                 if decoded.len() >= 40 {
                                     for offset in (32..decoded.len() - 8).step_by(8) {
                                         if offset + 8 <= decoded.len() {
@@ -1696,10 +1700,10 @@ impl TransactionInfo {
                 info.signers = json_tx.signatures.clone();
             }
             EncodedTransaction::Binary(_, _) => {
-                info.transaction_type = "binary".to_string();
+                info.transaction_type = Some(TransactionType::Binary);
             }
             _ => {
-                info.transaction_type = "other_encoding".to_string();
+                info.transaction_type = Some(TransactionType::Other);
             }
         }
         if let Some(meta) = &transaction_with_meta.meta {
@@ -1768,7 +1772,7 @@ impl TransactionInfo {
             .collect();
         info.instructions_count = raw_msg.instructions.len() as u64;
         info.recent_blockhash = raw_msg.recent_blockhash.clone();
-        info.transaction_type = "raw".to_string();
+        info.transaction_type = Some(TransactionType::Raw);
         info.program_id = "unknown".to_string();
     }
 
@@ -1992,7 +1996,7 @@ impl TransactionInfo {
             match (pre_token_balances, post_token_balances) {
                 (OptionSerializer::Some(pre_balances), OptionSerializer::Some(post_balances)) => {
                     if !pre_balances.is_empty() || !post_balances.is_empty() {
-                        info.transaction_type = "token_transfer".to_string();
+                        info.transaction_type = Some(TransactionType::TokenTransfer);
                         // check token transfer details
                         Self::check_token_transfers(info, pre_balances, post_balances);
                         // check nft transfer
@@ -2072,7 +2076,7 @@ impl TransactionInfo {
                 if amount == 1 {
                     info.is_nft_transfer = true;
                     info.nft_mint = Some(balance.mint.clone());
-                    info.transaction_type = "nft_transfer".to_string();
+                    info.transaction_type = Some(TransactionType::NFTTransfer);
                     break;
                 }
             }
@@ -2129,20 +2133,20 @@ impl TransactionInfo {
                     || log.contains(RAYDIUM_CPMM_POOL_PROGRAM_ID)
                     || log.contains(RAYDIUM_CLMM_POOL_PROGRAM_ID)
                 {
-                    info.dex_program_name = Some("raydium".to_string());
+                    info.dex_program_type = Some(DexProgramType::Raydium);
                     // pool
                     for log in logs.clone().unwrap_or(vec![]) {
                         if log.contains(RAYDIUM_V4_POOL_PROGRAM_ID) {
                             info.dex_program_id = Some(RAYDIUM_V4_POOL_PROGRAM_ID.to_string());
                             info.dex_pool_program_id = Some(RAYDIUM_V4_POOL_PROGRAM_ID.to_string());
                             info.dex_pool_program_name = Some("raydium-v4-pool".to_string());
-                            info.transaction_type = "swap".to_string();
+                            info.transaction_type = Some(TransactionType::Swap);
                             for log in logs.clone().unwrap_or(vec![]) {
                                 if (log.contains("MintTo")) {
-                                    info.transaction_type = "addLiquidity".to_string();
+                                    info.transaction_type = Some(TransactionType::AddLiquidity);
                                 }
                                 if (log.contains("Burn")) {
-                                    info.transaction_type = "removeLiquidity".to_string();
+                                    info.transaction_type = Some(TransactionType::RemoveLiquidity);
                                 }
                             }
                         }
@@ -2151,13 +2155,13 @@ impl TransactionInfo {
                             info.dex_pool_program_id =
                                 Some(RAYDIUM_CPMM_POOL_PROGRAM_ID.to_string());
                             info.dex_pool_program_name = Some("raydium-cpmm-pool".to_string());
-                            info.transaction_type = "swap".to_string();
+                            info.transaction_type = Some(TransactionType::Swap);
                             for log in logs.clone().unwrap_or(vec![]) {
                                 if (log.contains("MintTo")) {
-                                    info.transaction_type = "addLiquidity".to_string();
+                                    info.transaction_type = Some(TransactionType::AddLiquidity);
                                 }
                                 if (log.contains("Burn")) {
-                                    info.transaction_type = "removeLiquidity".to_string();
+                                    info.transaction_type = Some(TransactionType::RemoveLiquidity);
                                 }
                             }
                         }
@@ -2166,13 +2170,13 @@ impl TransactionInfo {
                             info.dex_pool_program_id =
                                 Some(RAYDIUM_CLMM_POOL_PROGRAM_ID.to_string());
                             info.dex_pool_program_name = Some("raydium-clmm-pool".to_string());
-                            info.transaction_type = "swap".to_string();
+                            info.transaction_type = Some(TransactionType::Swap);
                             for log in logs.clone().unwrap_or(vec![]) {
                                 if (log.contains("IncreaseLiquidityV2")) {
-                                    info.transaction_type = "addLiquidity".to_string();
+                                    info.transaction_type = Some(TransactionType::AddLiquidity);
                                 }
                                 if (log.contains("Burn")) {
-                                    info.transaction_type = "removeLiquidity".to_string();
+                                    info.transaction_type = Some(TransactionType::RemoveLiquidity);
                                 }
                             }
                         }
@@ -2183,21 +2187,21 @@ impl TransactionInfo {
                     || log.contains(METEORA_DLMM_V2_PROGRAM_ID)
                     || log.contains(METEORA_POOL_PROGRAM_ID)
                 {
-                    info.dex_program_name = Some("meteora".to_string());
-                    info.transaction_type = "swap".to_string();
+                    info.dex_program_type = Some(DexProgramType::Meteora);
+                    info.transaction_type = Some(TransactionType::Swap);
                     // pool
                     for log in logs.clone().unwrap_or(vec![]) {
                         if log.contains(METEORA_DAMM_V2_PROGRAM_ID) {
                             info.dex_program_id = Some(METEORA_DAMM_V2_PROGRAM_ID.to_string());
                             info.dex_pool_program_id = Some(METEORA_DAMM_V2_PROGRAM_ID.to_string());
                             info.dex_pool_program_name = Some("meteora-damm-v2-pool".to_string());
-                            info.transaction_type = "swap".to_string();
+                            info.transaction_type = Some(TransactionType::Swap);
                             for log in logs.clone().unwrap_or(vec![]) {
                                 if (log.contains("AddLiquidity")) {
-                                    info.transaction_type = "addLiquidity".to_string();
+                                    info.transaction_type = Some(TransactionType::AddLiquidity);
                                 }
                                 if (log.contains("RemoveLiquidity")) {
-                                    info.transaction_type = "removeLiquidity".to_string();
+                                    info.transaction_type = Some(TransactionType::RemoveLiquidity);
                                 }
                             }
                         }
@@ -2207,7 +2211,7 @@ impl TransactionInfo {
                             info.dex_program_id = Some(METEORA_DLMM_V2_PROGRAM_ID.to_string());
                             info.dex_pool_program_id = Some(METEORA_DLMM_V2_PROGRAM_ID.to_string());
                             info.dex_pool_program_name = Some("meteora-dlmm-v2-pool".to_string());
-                            info.transaction_type = "swap".to_string();
+                            info.transaction_type = Some(TransactionType::Swap);
                         }
                     }
                     for log in logs.clone().unwrap_or(vec![]) {
@@ -2215,13 +2219,13 @@ impl TransactionInfo {
                             info.dex_program_id = Some(METEORA_POOL_PROGRAM_ID.to_string());
                             info.dex_pool_program_id = Some(METEORA_POOL_PROGRAM_ID.to_string());
                             info.dex_pool_program_name = Some("meteora-pool".to_string());
-                            info.transaction_type = "swap".to_string();
+                            info.transaction_type = Some(TransactionType::Swap);
                             for log in logs.clone().unwrap_or(vec![]) {
                                 if (log.contains("AddBalanceLiquidity")) {
-                                    info.transaction_type = "addLiquidity".to_string();
+                                    info.transaction_type = Some(TransactionType::AddLiquidity);
                                 }
                                 if (log.contains("RemoveBalanceLiquidity")) {
-                                    info.transaction_type = "removeLiquidity".to_string();
+                                    info.transaction_type = Some(TransactionType::RemoveLiquidity);
                                 }
                             }
                         }
@@ -2229,19 +2233,19 @@ impl TransactionInfo {
                     return;
                 }
                 if log.contains(ORCA_WHIRLPOOLS_PROGRAM_ID) {
-                    info.dex_program_name = Some("orca".to_string());
+                    info.dex_program_type = Some(DexProgramType::Orca);
                     for log in logs.clone().unwrap_or(vec![]) {
                         if log.contains(ORCA_WHIRLPOOLS_PROGRAM_ID) {
                             info.dex_program_id = Some(ORCA_WHIRLPOOLS_PROGRAM_ID.to_string());
                             info.dex_pool_program_id = Some(ORCA_WHIRLPOOLS_PROGRAM_ID.to_string());
                             info.dex_pool_program_name = Some("orca-whirl-pools".to_string());
-                            info.transaction_type = "swap".to_string();
+                            info.transaction_type = Some(TransactionType::Swap);
                             for log in logs.clone().unwrap_or(vec![]) {
                                 if (log.contains("IncreaseLiquidity")) {
-                                    info.transaction_type = "addLiquidity".to_string();
+                                    info.transaction_type = Some(TransactionType::AddLiquidity);
                                 }
                                 if (log.contains("DecreaseLiquidity")) {
-                                    info.transaction_type = "removeLiquidity".to_string();
+                                    info.transaction_type = Some(TransactionType::RemoveLiquidity);
                                 }
                             }
                         }
@@ -2278,8 +2282,8 @@ impl TransactionInfo {
             for log in logs.clone().unwrap_or(vec![]) {
                 if log.contains(PUMP_AAM_PROGRAM_ID) {
                     info.dex_program_id = Some(PUMP_AAM_PROGRAM_ID.to_string());
-                    info.dex_program_name = Some("pump-aam".to_string());
-                    info.transaction_type = "swap".to_string();
+                    info.dex_program_type = Some(DexProgramType::PumpAAM);
+                    info.transaction_type = Some(TransactionType::Swap);
                     let mut deposit: bool = false;
                     let mut mintTo: bool = false;
                     let mut burn: bool = false;
@@ -2299,17 +2303,17 @@ impl TransactionInfo {
                         }
                     }
                     if (deposit && mintTo) {
-                        info.transaction_type = "addLiquidity".to_string();
+                        info.transaction_type = Some(TransactionType::AddLiquidity);
                     }
                     if (burn && withdraw) {
-                        info.transaction_type = "removeLiquidity".to_string();
+                        info.transaction_type = Some(TransactionType::RemoveLiquidity);
                     }
                     return;
                 }
                 if log.contains(PUMP_BOND_CURVE_PROGRAM_ID) {
                     info.dex_program_id = Some(PUMP_BOND_CURVE_PROGRAM_ID.to_string());
-                    info.dex_program_name = Some("pump-bond-curve".to_string());
-                    info.transaction_type = "swap".to_string();
+                    info.dex_program_type = Some(DexProgramType::PumpBondCurve);
+                    info.transaction_type = Some(TransactionType::Swap);
                     return;
                 }
             }
@@ -2353,7 +2357,7 @@ impl TransactionInfo {
                             if let Some(transfer_info) =
                                 Self::extract_compiled_transfer_info(compiled_inst, parsed_msg)
                             {
-                                info.transaction_type = "transfer".to_string();
+                                info.transaction_type = Some(TransactionType::Transfer);
                                 info.program_id = "system".to_string();
                                 info.from = transfer_info.from;
                                 info.to = transfer_info.to;
@@ -2373,7 +2377,7 @@ impl TransactionInfo {
         info: &mut TransactionInfo,
         parsed_obj: &serde_json::Map<String, serde_json::Value>,
     ) {
-        info.transaction_type = "transfer".to_string();
+        info.transaction_type = Some(TransactionType::Transfer);
         info.program_id = "system".to_string();
         if let Some(serde_json::Value::Object(info_obj)) = parsed_obj.get("info") {
             if let (Some(from), Some(to), Some(lamports)) = (
@@ -2584,7 +2588,7 @@ impl Default for TransactionInfo {
             err: None,
             is_confirmed: false,
             is_finalized: false,
-            transaction_type: "unknown".to_string(),
+            transaction_type: None,
             program_id: String::new(),
             instructions_count: 0,
             inner_instructions_count: 0,
@@ -2610,7 +2614,7 @@ impl Default for TransactionInfo {
             is_swap: false,
 
             dex_program_id: None,        // DEX program id
-            dex_program_name: None,      // DEX program name
+            dex_program_type: None,      // DEX program name
             dex_pool_program_id: None,   // DEX program pool id
             dex_pool_program_name: None, // DEX program pool name
 
@@ -2639,6 +2643,12 @@ impl Default for TransactionInfo {
 }
 
 impl TransactionInfo {
+    pub fn get_pump_bond_transaction_info(&self) -> PumpBondCurveTransactionInfo {
+        PumpBondCurveTransactionInfo::new(self)
+    }
+}
+
+impl TransactionInfo {
     pub fn is_successful(&self) -> bool {
         self.status == "success"
     }
@@ -2661,16 +2671,6 @@ pub enum TransactionStatus {
     Success,
     Failed(String),
     Pending,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum TransactionType {
-    Transfer,
-    TokenTransfer(String),
-    NFTTransfer(String),
-    Swap(String, String),
-    ProgramInteraction(String),
-    Unknown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
