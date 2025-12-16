@@ -824,35 +824,52 @@ impl TransactionInfo {
     }
 
     pub fn get_pool_left_amount(&self) -> Option<u64> {
-        // First, check if the left pool address is SOL/USDC/USDT/USD1.
         if let Some(left_address) = self.get_pool_left_address() {
             use crate::global::{SOL, USD_1, USDC, USDT};
-            // Check if the address needs to use the maximum value.
             let is_common_token = left_address == SOL
                 || left_address == USDC
                 || left_address == USDT
                 || left_address == USD_1;
             if is_common_token {
-                // For these four addresses, find the maximum amount of tokens corresponding to them.
                 if let Some(max_amount) = self.get_max_amount_for_mint(&left_address) {
                     return Some(max_amount);
                 }
             }
         }
-        if let Some(address) = self.get_pool_left_address() {
-            if let Some(amount) = self.input_amount {
-                return Some(amount);
+        let address = self.get_pool_left_address()?;
+        if let Some(amount) = self.input_amount {
+            return Some(amount);
+        }
+        for log in &self.logs {
+            if log.contains("Input amount:") || log.contains("amountIn:") {
+                let cleaned = log.replace("Input amount:", "").replace("amountIn:", "");
+                for word in cleaned.split_whitespace() {
+                    if let Ok(amount) = word
+                        .trim_matches(|c: char| !c.is_ascii_digit())
+                        .parse::<u64>()
+                    {
+                        if amount > 0 {
+                            return Some(amount);
+                        }
+                    }
+                }
             }
-            for log in &self.logs {
-                if log.contains("Input amount:") || log.contains("amountIn:") {
-                    let mut cleaned = log.to_string();
-                    cleaned = cleaned
-                        .replace("Input amount:", "")
-                        .replace("amountIn:", "");
-                    for word in cleaned.split_whitespace() {
-                        if let Ok(amount) =
-                            word.trim_matches(|c: char| !c.is_digit(10)).parse::<u64>()
-                        {
+            let dex_patterns = [
+                ("amount_in:", ":"),
+                ("input_amount:", ":"),
+                ("fromAmount:", ":"),
+                ("amountIn=", "="),
+                ("in_amount:", ":"),
+            ];
+            for (pattern, separator) in dex_patterns.iter() {
+                if log.contains(pattern) {
+                    if let Some(start) = log.find(pattern) {
+                        let rest = &log[start + pattern.len()..];
+                        let end = rest
+                            .find(|c: char| c == ' ' || c == ',' || c == '}')
+                            .unwrap_or(rest.len());
+                        let amount_str = &rest[..end].trim();
+                        if let Ok(amount) = amount_str.parse::<u64>() {
                             if amount > 0 {
                                 return Some(amount);
                             }
@@ -860,40 +877,226 @@ impl TransactionInfo {
                     }
                 }
             }
-            let mut max_amount = 0u64;
-            for pre_balance in &self.pre_token_balances {
-                if pre_balance.mint == address {
-                    let post_amount = self
-                        .post_token_balances
-                        .iter()
-                        .find(|b| b.mint == address && b.owner == pre_balance.owner)
-                        .and_then(|b| b.ui_token_amount.amount.parse::<u64>().ok())
-                        .unwrap_or(0);
-                    let pre_amount = pre_balance
-                        .ui_token_amount
-                        .amount
-                        .parse::<u64>()
-                        .unwrap_or(0);
-                    if pre_amount > post_amount {
-                        let decrease = pre_amount - post_amount;
-                        if decrease > max_amount {
-                            max_amount = decrease;
+        }
+        for instruction in &self.instructions {
+            let data = &instruction.data;
+            if data.contains("amountIn") || data.contains("input_amount") {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                    if let Some(amount) = json
+                        .get("amountIn")
+                        .or_else(|| json.get("input_amount"))
+                        .or_else(|| json.get("fromAmount"))
+                    {
+                        if let Some(amount_num) = amount.as_u64() {
+                            if amount_num > 0 {
+                                return Some(amount_num);
+                            }
+                        } else if let Some(amount_str) = amount.as_str() {
+                            if let Ok(amount_num) = amount_str.parse::<u64>() {
+                                if amount_num > 0 {
+                                    return Some(amount_num);
+                                }
+                            }
                         }
                     }
                 }
             }
-            if max_amount > 0 {
-                return Some(max_amount);
+        }
+        for inner_instruction in &self.inner_instructions {
+            for inst in &inner_instruction.instructions {
+                if inst.data.contains("amountIn") || inst.data.contains("input_amount") {
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&inst.data) {
+                        if let Some(amount) =
+                            json.get("amountIn").or_else(|| json.get("input_amount"))
+                        {
+                            if let Some(amount_num) = amount.as_u64() {
+                                if amount_num > 0 {
+                                    return Some(amount_num);
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
-        None
+        let mut max_amount = 0u64;
+        for pre_balance in &self.pre_token_balances {
+            if pre_balance.mint == address {
+                let post_amount = self
+                    .post_token_balances
+                    .iter()
+                    .find(|b| b.mint == address && b.owner == pre_balance.owner)
+                    .and_then(|b| b.ui_token_amount.amount.parse::<u64>().ok())
+                    .unwrap_or(0);
+                let pre_amount = pre_balance
+                    .ui_token_amount
+                    .amount
+                    .parse::<u64>()
+                    .unwrap_or(0);
+                if pre_amount > post_amount {
+                    let decrease = pre_amount - post_amount;
+                    if decrease > max_amount {
+                        max_amount = decrease;
+                    }
+                }
+            }
+        }
+        if max_amount == 0 {
+            let mut all_decreases = Vec::new();
+            for pre_balance in &self.pre_token_balances {
+                if pre_balance.mint == address {
+                    let mut total_pre_amount = 0u64;
+                    let mut total_post_amount = 0u64;
+                    for post_balance in &self.post_token_balances {
+                        if post_balance.mint == address && post_balance.owner == pre_balance.owner {
+                            total_post_amount += post_balance
+                                .ui_token_amount
+                                .amount
+                                .parse::<u64>()
+                                .unwrap_or(0);
+                        }
+                    }
+                    total_pre_amount += pre_balance
+                        .ui_token_amount
+                        .amount
+                        .parse::<u64>()
+                        .unwrap_or(0);
+                    if total_pre_amount > total_post_amount {
+                        all_decreases.push(total_pre_amount - total_post_amount);
+                    }
+                }
+            }
+            if let Some(&max_decrease) = all_decreases.iter().max() {
+                if max_decrease > 0 {
+                    max_amount = max_decrease;
+                }
+            }
+        }
+        if max_amount == 0 {
+            for balance in &self.pre_token_balances {
+                if balance.mint == address {
+                    if let Some(ui_amount_str) = &balance.ui_token_amount.ui_amount_string {
+                        let cleaned = ui_amount_str.replace(',', "");
+                        if let Ok(ui_amount) = cleaned.parse::<f64>() {
+                            let raw_amount = (ui_amount
+                                * 10u64.pow(balance.ui_token_amount.decimals as u32) as f64)
+                                as u64;
+                            if raw_amount > max_amount {
+                                max_amount = raw_amount;
+                            }
+                        }
+                    }
+                    if let Some(ui_amount) = balance.ui_token_amount.ui_amount {
+                        let raw_amount = (ui_amount
+                            * 10u64.pow(balance.ui_token_amount.decimals as u32) as f64)
+                            as u64;
+                        if raw_amount > max_amount {
+                            max_amount = raw_amount;
+                        }
+                    }
+                }
+            }
+        }
+        if max_amount == 0 {
+            if let Some((token, amount)) = self.get_token_spent_amount() {
+                if token == address {
+                    max_amount = amount;
+                }
+            }
+        }
+        if max_amount == 0 {
+            let is_pump_fun_aggregator = self
+                .logs
+                .iter()
+                .any(|log| log.contains("BuyExactInPumpFun") || log.contains("Pump.fun"));
+            if is_pump_fun_aggregator {
+                for log in &self.logs {
+                    if log.contains("Program data:") {
+                        if let Some(base64_start) = log.find("Program data:") {
+                            let base64_str = &log[base64_start + 13..].trim();
+                            if let Ok(decoded) = base64::decode(base64_str) {
+                                if decoded.len() >= 40 {
+                                    for offset in (24..decoded.len() - 8).step_by(8) {
+                                        if offset + 8 <= decoded.len() {
+                                            let potential_amount = u64::from_le_bytes([
+                                                decoded[offset],
+                                                decoded[offset + 1],
+                                                decoded[offset + 2],
+                                                decoded[offset + 3],
+                                                decoded[offset + 4],
+                                                decoded[offset + 5],
+                                                decoded[offset + 6],
+                                                decoded[offset + 7],
+                                            ]);
+                                            if potential_amount > 1000
+                                                && potential_amount < 1_000_000_000_000
+                                            {
+                                                max_amount = potential_amount;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if max_amount == 0 {
+                    for log in &self.logs {
+                        if log.contains("TransferChecked") && log.contains(&address) {
+                            let parts: Vec<&str> = log.split_whitespace().collect();
+                            for part in parts {
+                                if part.contains('.') {
+                                    let cleaned = part.replace(',', "").replace(')', "");
+                                    if let Ok(amount_f64) = cleaned.parse::<f64>() {
+                                        let raw_amount = (amount_f64 * 1_000_000.0) as u64;
+                                        if raw_amount > max_amount {
+                                            max_amount = raw_amount;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if max_amount == 0 {
+                    for log in &self.logs {
+                        if log.contains("Transfer") && log.contains("lamports") {
+                            let parts: Vec<&str> = log.split_whitespace().collect();
+                            for part in parts {
+                                if part.chars().all(|c| c.is_ascii_digit()) {
+                                    if let Ok(lamports) = part.parse::<u64>() {
+                                        if lamports > 1000 && lamports < 1_000_000_000_000 {
+                                            max_amount = lamports;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if max_amount == 0 {
+            use crate::global::SOL;
+            if address == SOL {
+                if self.value_sol > 0.0 {
+                    max_amount = (self.value_sol * LAMPORTS_PER_SOL as f64) as u64;
+                }
+            }
+        }
+        if max_amount > 0 {
+            Some(max_amount)
+        } else {
+            None
+        }
     }
 
     pub fn get_pool_right_amount(&self) -> Option<u64> {
-        // First, check if the right pool address is SOL/USDC/USDT/USD1.
         if let Some(right_address) = self.get_pool_right_address() {
             use crate::global::{SOL, USD_1, USDC, USDT};
-            // Check if the address needs to use the maximum value.
             let is_common_token = right_address == SOL
                 || right_address == USDC
                 || right_address == USDT
@@ -922,6 +1125,70 @@ impl TransactionInfo {
                     }
                 }
             }
+            let dex_patterns = [
+                ("amount_out:", ":"),
+                ("output_amount:", ":"),
+                ("toAmount:", ":"),
+                ("amountOut=", "="),
+                ("out_amount:", ":"),
+            ];
+            for (pattern, separator) in dex_patterns.iter() {
+                if log.contains(pattern) {
+                    if let Some(start) = log.find(pattern) {
+                        let rest = &log[start + pattern.len()..];
+                        let end = rest
+                            .find(|c: char| c == ' ' || c == ',' || c == '}')
+                            .unwrap_or(rest.len());
+                        let amount_str = &rest[..end].trim();
+                        if let Ok(amount) = amount_str.parse::<u64>() {
+                            if amount > 0 {
+                                return Some(amount);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for instruction in &self.instructions {
+            let data = &instruction.data;
+            if data.contains("amountOut") || data.contains("output_amount") {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                    if let Some(amount) = json
+                        .get("amountOut")
+                        .or_else(|| json.get("output_amount"))
+                        .or_else(|| json.get("toAmount"))
+                    {
+                        if let Some(amount_num) = amount.as_u64() {
+                            if amount_num > 0 {
+                                return Some(amount_num);
+                            }
+                        } else if let Some(amount_str) = amount.as_str() {
+                            if let Ok(amount_num) = amount_str.parse::<u64>() {
+                                if amount_num > 0 {
+                                    return Some(amount_num);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for inner_instruction in &self.inner_instructions {
+            for inst in &inner_instruction.instructions {
+                if inst.data.contains("amountOut") || inst.data.contains("output_amount") {
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&inst.data) {
+                        if let Some(amount) =
+                            json.get("amountOut").or_else(|| json.get("output_amount"))
+                        {
+                            if let Some(amount_num) = amount.as_u64() {
+                                if amount_num > 0 {
+                                    return Some(amount_num);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
         let mut max_amount = 0u64;
         for post_balance in &self.post_token_balances {
@@ -945,10 +1212,184 @@ impl TransactionInfo {
                 }
             }
         }
-        if max_amount > 0 {
-            return Some(max_amount);
+        if max_amount == 0 {
+            let mut all_increases = Vec::new();
+            for post_balance in &self.post_token_balances {
+                if post_balance.mint == address {
+                    let mut total_pre_amount = 0u64;
+                    let mut total_post_amount = 0u64;
+                    for pre_balance in &self.pre_token_balances {
+                        if pre_balance.mint == address && pre_balance.owner == post_balance.owner {
+                            total_pre_amount += pre_balance
+                                .ui_token_amount
+                                .amount
+                                .parse::<u64>()
+                                .unwrap_or(0);
+                        }
+                    }
+                    total_post_amount += post_balance
+                        .ui_token_amount
+                        .amount
+                        .parse::<u64>()
+                        .unwrap_or(0);
+                    if total_post_amount > total_pre_amount {
+                        all_increases.push(total_post_amount - total_pre_amount);
+                    }
+                }
+            }
+            if let Some(&max_increase) = all_increases.iter().max() {
+                if max_increase > 0 {
+                    max_amount = max_increase;
+                }
+            }
         }
-        None
+        if max_amount == 0 {
+            for balance in &self.post_token_balances {
+                if balance.mint == address {
+                    if let Some(ui_amount_str) = &balance.ui_token_amount.ui_amount_string {
+                        let cleaned = ui_amount_str.replace(',', "");
+                        if let Ok(ui_amount) = cleaned.parse::<f64>() {
+                            let raw_amount = (ui_amount
+                                * 10u64.pow(balance.ui_token_amount.decimals as u32) as f64)
+                                as u64;
+                            if raw_amount > max_amount {
+                                max_amount = raw_amount;
+                            }
+                        }
+                    }
+                    if let Some(ui_amount) = balance.ui_token_amount.ui_amount {
+                        let raw_amount = (ui_amount
+                            * 10u64.pow(balance.ui_token_amount.decimals as u32) as f64)
+                            as u64;
+                        if raw_amount > max_amount {
+                            max_amount = raw_amount;
+                        }
+                    }
+                }
+            }
+        }
+        if max_amount == 0 {
+            if let Some((token, amount)) = self.get_token_received_amount() {
+                if token == address {
+                    max_amount = amount;
+                }
+            }
+        }
+        if max_amount == 0 {
+            let is_pump_fun_aggregator = self
+                .logs
+                .iter()
+                .any(|log| log.contains("BuyExactInPumpFun") || log.contains("Pump.fun"));
+            if is_pump_fun_aggregator {
+                for log in &self.logs {
+                    if log.contains("Program data:") {
+                        if let Some(base64_start) = log.find("Program data:") {
+                            let base64_str = &log[base64_start + 13..].trim();
+                            if let Ok(decoded) = base64::decode(base64_str) {
+                                if decoded.len() >= 40 {
+                                    for offset in (32..decoded.len() - 8).step_by(8) {
+                                        if offset + 8 <= decoded.len() {
+                                            let potential_amount = u64::from_le_bytes([
+                                                decoded[offset],
+                                                decoded[offset + 1],
+                                                decoded[offset + 2],
+                                                decoded[offset + 3],
+                                                decoded[offset + 4],
+                                                decoded[offset + 5],
+                                                decoded[offset + 6],
+                                                decoded[offset + 7],
+                                            ]);
+                                            if potential_amount > 1000
+                                                && potential_amount < 1_000_000_000_000
+                                            {
+                                                max_amount = potential_amount;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if max_amount == 0 {
+                    let mut found_pump_section = false;
+                    for log in &self.logs {
+                        if log.contains("Invoking Pump.fun") {
+                            found_pump_section = true;
+                            continue;
+                        }
+                        if found_pump_section {
+                            if log.contains(',') && !log.contains("Program") {
+                                let parts: Vec<&str> = log.split_whitespace().collect();
+                                for part in parts {
+                                    let cleaned = part.replace(',', "").replace('$', "");
+                                    if cleaned.contains('.') {
+                                        if let Ok(amount_f64) = cleaned.parse::<f64>() {
+                                            let raw_amount = (amount_f64 * 1_000_000.0) as u64;
+                                            if raw_amount > max_amount {
+                                                max_amount = raw_amount;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            if log.contains("Program") && log.contains("consumed") {
+                                break;
+                            }
+                        }
+                    }
+                }
+                if max_amount == 0 {
+                    for log in &self.logs {
+                        if let Some(idx) = log.find("for ") {
+                            let after_for = &log[idx + 4..];
+                            let amount_str = after_for.split_whitespace().next().unwrap_or("");
+                            let cleaned = amount_str.replace(',', "");
+                            if let Ok(amount_f64) = cleaned.parse::<f64>() {
+                                let raw_amount = (amount_f64 * 1_000_000.0) as u64;
+                                if raw_amount > max_amount {
+                                    max_amount = raw_amount;
+                                }
+                            }
+                        }
+                    }
+                }
+                if max_amount == 0 {
+                    for log in &self.logs {
+                        if log.contains("TransferChecked") && log.contains(&address) {
+                            let parts: Vec<&str> = log.split_whitespace().collect();
+                            for part in parts {
+                                if part.contains('.') {
+                                    let cleaned = part.replace(',', "").replace(')', "");
+                                    if let Ok(amount_f64) = cleaned.parse::<f64>() {
+                                        let raw_amount = (amount_f64 * 1_000_000.0) as u64;
+                                        if raw_amount > max_amount {
+                                            max_amount = raw_amount;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if max_amount == 0 {
+            use crate::global::SOL;
+            if address == SOL {
+                if self.value_sol > 0.0 {
+                    max_amount = (self.value_sol * LAMPORTS_PER_SOL as f64) as u64;
+                }
+            }
+        }
+        if max_amount > 0 {
+            Some(max_amount)
+        } else {
+            None
+        }
     }
 
     // Get the maximum amount of a specified token address
