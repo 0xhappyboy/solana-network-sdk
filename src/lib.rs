@@ -1,12 +1,12 @@
 pub mod account;
 pub mod global;
 pub mod message;
+pub mod pyth;
 pub mod scan;
 pub mod tool;
 pub mod trade;
 pub mod types;
 pub mod wallet;
-pub mod pyth;
 
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{epoch_info::EpochInfo, native_token::LAMPORTS_PER_SOL, pubkey::Pubkey};
@@ -15,7 +15,7 @@ use std::{str::FromStr, sync::Arc};
 use crate::{
     account::Account,
     global::{SOLANA_DEV_NET_URL, SOLANA_OFFICIAL_MAIN_NET_URL, SOLANA_TEST_NET_URL},
-    trade::Trade,
+    trade::{Trade},
     types::{Mode, UnifiedError, UnifiedResult},
 };
 

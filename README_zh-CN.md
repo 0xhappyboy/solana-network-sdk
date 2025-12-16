@@ -41,7 +41,41 @@ async fn main() -> Result<(), String> {
 
 Trade 模块提供了与 Solana 区块链交互的功能，包括获取交易历史、分析交易详情、检查地址关系等。
 
-### 1. 估算交易费用
+### 获取交易过程中实际增加和减少的代币地址和数量.
+
+```rust
+#[tokio::test]
+async fn a() {
+    let solana = Solana::new(Mode::MAIN);
+    let trade = solana.unwrap().create_trade();
+    let t2: Result<TransactionInfo, UnifiedError<String>> = trade.get_transaction_display_details(
+        "CLoekmTsTYyFgHLEj7YE1GMycHHLhxE6KB49tQgHF98pVCzEh7WaYXGaSUNjnZ12Zi2JQcB8kgP27mkx9PoKUQK",
+    ).await;
+    let increase = t2.as_ref().unwrap().get_received_token_sol();
+    println!("increase :{:?} ", increase); // increase.0 = EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v; increase.1 = 48.655907
+    let reduce = t2.as_ref().unwrap().get_received_token_sol();
+    println!("reduce :{:?} ", reduce); // reduce.0 = EhzVcKKmGjLk6pD5gLT6ZrTg62bMgPgTSCXXmANnSyQA; reduce.1 = 6444.329826091
+}
+```
+
+### 从签名中指定的流动性池中检索基础代币/报价代币.
+
+```rust
+#[tokio::test]
+async fn a() {
+    let solana = Solana::new(Mode::MAIN);
+    let trade = solana.unwrap().create_trade();
+    let t2: Result<TransactionInfo, UnifiedError<String>> = trade.get_transaction_display_details(
+        "CLoekmTsTYyFgHLEj7YE1GMycHHLhxE6KB49tQgHF98pVCzEh7WaYXGaSUNjnZ12Zi2JQcB8kgP27mkx9PoKUQK",
+    ).await;
+    println!("Liquidity Pool Base Token Address :{:?}", t2.as_ref().unwrap().get_pool_left_address()); // EhzVcKKmGjLk6pD5gLT6ZrTg62bMgPgTSCXXmANnSyQA
+    println!("Liquidity Pool Base Token Amount :{:?}", t2.as_ref().unwrap().get_pool_left_amount_sol()); // 6444.329826091
+    println!("Liquidity Pool Quote Token Address :{:?}", t2.as_ref().unwrap().get_pool_right_address()); // EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+    println!("Liquidity Pool Quote Token Amount :{:?}", t2.as_ref().unwrap().get_pool_right_amount_sol()); // 48.655907
+}
+```
+
+### 估算交易费用
 
 ```rust
 let solana = Solana::new(Mode::DEV).unwrap();
@@ -53,7 +87,7 @@ Err(e) => eprintln!("估算费用错误: {}", e),
 }
 ```
 
-### 2. 分页获取交易历史
+### 分页获取交易历史
 
 ```rust
 let mut cursor: Option<String> = None;
@@ -92,7 +126,7 @@ println!("获取到 {} 笔交易", transactions.len());
 }
 ```
 
-### 3. 获取筛选后的交易历史
+### 获取筛选后的交易历史
 
 ```rust
 let client = solana.client_arc();
@@ -124,7 +158,7 @@ address,
 ).await?;
 ```
 
-### 4. 获取包含另一地址的最后交易
+### 获取包含另一地址的最后交易
 
 ```rust
 let address_a = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
@@ -142,7 +176,7 @@ Err(e) => eprintln!("错误: {}", e),
 }
 ```
 
-### 5. 获取所有包含另一地址的交易
+### 获取所有包含另一地址的交易
 
 ```rust
 let address_a = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
@@ -163,7 +197,7 @@ println!("找到 {} 笔包含两个地址的交易", transactions.len());
 }
 ```
 
-### 6. 获取交易详情
+### 获取交易详情
 
 ```rust
 let signature = "5h6xBEauJ3PK6SWZrW5M4Q7GjS2eX2jGqKJ8H9i0K1L2M3N4O5P6Q7R8S9T0U1V2W3X4Y5Z6A7B8C9D0";
@@ -189,7 +223,7 @@ signature,
 }
 ```
 
-### 7. 按收款方和付款方获取交易（宽松）
+### 按收款方和付款方获取交易（宽松）
 
 ```rust
 let recipient = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
@@ -210,7 +244,7 @@ transactions.len(), recipient, payer);
 }
 ```
 
-### 8. 按收款方和付款方获取交易（严格）
+### 按收款方和付款方获取交易（严格）
 
 ```rust
 let recipient = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
@@ -240,7 +274,7 @@ transactions.len(), recipient, payer);
 }
 ```
 
-### 9. 检查支付关系
+### 检查支付关系
 
 ```rust
 let recipient = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
@@ -257,7 +291,7 @@ Err(e) => eprintln!("检查支付关系错误: {}", e),
 }
 ```
 
-### 10. 获取总支付金额
+### 获取总支付金额
 
 ```rust
 let recipient = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
@@ -282,7 +316,7 @@ Err(e) => eprintln!("错误: {}", e),
 }
 ```
 
-### 11. TransactionInfo 辅助方法
+### TransactionInfo 辅助方法
 
 ```rust
 // 获取 TransactionInfo 对象后
@@ -324,7 +358,7 @@ let tx_info = TransactionInfo::from_encoded_transaction(&transaction, signature,
 }
 ```
 
-### 12. 完整示例：分析地址关系
+### 分析地址关系
 
 ```rust
 async fn analyze_address_relationships(
@@ -371,7 +405,7 @@ address2: &str,
 
 # 扫描模块
 
-### 1. 获取所有历史签名
+### 获取所有历史签名
 
 使用分页获取给定地址的所有历史交易签名。
 
@@ -407,7 +441,7 @@ let scan = solana_network_sdk::scan::Scan::new(client.clone());
 
 **返回:** `Result<Vec<String>, String>`
 
-### 2. 获取有限数量的签名
+### 获取有限数量的签名
 
 使用安全机制获取特定数量的交易签名。
 
@@ -442,7 +476,7 @@ let scan = solana_network_sdk::scan::Scan::new(client.clone());
 
 **返回:** `Result<Vec<String>, String>`
 
-### 3. 获取最新签名
+### 获取最新签名
 
 无需分页快速获取最新的交易签名。
 
