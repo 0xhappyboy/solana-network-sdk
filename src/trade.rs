@@ -664,6 +664,15 @@ pub struct TransactionInfo {
 
 impl TransactionInfo {
     pub fn get_received_token(&self) -> Option<(String, u64)> {
+        if self.is_swap {
+            if let Some(right_mint) = self.get_pool_right_address() {
+                if let Some(amount) = self.get_pool_right_amount() {
+                    if amount > 0 {
+                        return Some((right_mint, amount));
+                    }
+                }
+            }
+        }
         if let Some(output_mint) = &self.output_mint {
             if let Some(output_amount) = self.output_amount {
                 if output_amount > 0 {
@@ -672,49 +681,22 @@ impl TransactionInfo {
             }
         }
         if self.balance_change > 0 {
+            use crate::global::SOL;
             return Some((SOL.to_string(), self.balance_change as u64));
         }
-        let token_received = self.get_token_received_amount();
-        if let Some((mint, amount)) = token_received {
-            if amount > 0 {
-                return Some((mint, amount));
-            }
-        }
+        self.get_token_received_amount()
+    }
+
+    pub fn get_spent_token(&self) -> Option<(String, u64)> {
         if self.is_swap {
-            if let Some(output_mint) = self.get_pool_right_address() {
-                if let Some(output_amount) = self.get_pool_right_amount() {
-                    if output_amount > 0 {
-                        return Some((output_mint, output_amount));
+            if let Some(left_mint) = self.get_pool_left_address() {
+                if let Some(amount) = self.get_pool_left_amount() {
+                    if amount > 0 {
+                        return Some((left_mint, amount));
                     }
                 }
             }
         }
-        let mut max_received_amount = 0u64;
-        let mut max_received_mint = None;
-        for post_balance in &self.post_token_balances {
-            let pre_amount = self
-                .pre_token_balances
-                .iter()
-                .find(|pre| pre.mint == post_balance.mint && pre.owner == post_balance.owner)
-                .and_then(|pre| pre.ui_token_amount.amount.parse::<u64>().ok())
-                .unwrap_or(0);
-            let post_amount = post_balance
-                .ui_token_amount
-                .amount
-                .parse::<u64>()
-                .unwrap_or(0);
-            if post_amount > pre_amount {
-                let received = post_amount - pre_amount;
-                if received > max_received_amount {
-                    max_received_amount = received;
-                    max_received_mint = Some(post_balance.mint.clone());
-                }
-            }
-        }
-        max_received_mint.map(|mint| (mint, max_received_amount))
-    }
-
-    pub fn get_spent_token(&self) -> Option<(String, u64)> {
         if let Some(input_mint) = &self.input_mint {
             if let Some(input_amount) = self.input_amount {
                 if input_amount > 0 {
@@ -723,22 +705,8 @@ impl TransactionInfo {
             }
         }
         if self.balance_change < 0 {
+            use crate::global::SOL;
             return Some((SOL.to_string(), self.balance_change.abs() as u64));
-        }
-        let token_spent = self.get_token_spent_amount();
-        if let Some((mint, amount)) = token_spent {
-            if amount > 0 {
-                return Some((mint, amount));
-            }
-        }
-        if self.is_swap {
-            if let Some(input_mint) = self.get_pool_left_address() {
-                if let Some(input_amount) = self.get_pool_left_amount() {
-                    if input_amount > 0 {
-                        return Some((input_mint, input_amount));
-                    }
-                }
-            }
         }
         for instruction in &self.instructions {
             if instruction.program_id == "system" {
@@ -751,6 +719,7 @@ impl TransactionInfo {
                                         info.get("lamports").and_then(|v| v.as_u64())
                                     {
                                         if lamports > 0 {
+                                            use crate::global::SOL;
                                             return Some((SOL.to_string(), lamports));
                                         }
                                     }
@@ -761,29 +730,7 @@ impl TransactionInfo {
                 }
             }
         }
-        let mut max_spent_amount = 0u64;
-        let mut max_spent_mint = None;
-        for pre_balance in &self.pre_token_balances {
-            let post_amount = self
-                .post_token_balances
-                .iter()
-                .find(|post| post.mint == pre_balance.mint && post.owner == pre_balance.owner)
-                .and_then(|post| post.ui_token_amount.amount.parse::<u64>().ok())
-                .unwrap_or(0);
-            let pre_amount = pre_balance
-                .ui_token_amount
-                .amount
-                .parse::<u64>()
-                .unwrap_or(0);
-            if pre_amount > post_amount {
-                let spent = pre_amount - post_amount;
-                if spent > max_spent_amount {
-                    max_spent_amount = spent;
-                    max_spent_mint = Some(pre_balance.mint.clone());
-                }
-            }
-        }
-        max_spent_mint.map(|mint| (mint, max_spent_amount))
+        self.get_token_spent_amount()
     }
 
     pub fn get_token_received_amount(&self) -> Option<(String, u64)> {
@@ -1078,7 +1025,6 @@ impl TransactionInfo {
                 }
             }
         }
-
         None
     }
 
