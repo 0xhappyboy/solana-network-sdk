@@ -2728,6 +2728,10 @@ impl TransactionInfo {
             Direction::Sell
         }
     }
+
+    pub fn is_swap(&self) -> bool {
+        self.is_swap
+    }
 }
 
 impl Default for TransactionInfo {
@@ -2817,6 +2821,14 @@ impl Default for TransactionInfo {
 }
 
 impl TransactionInfo {
+    pub fn is_pump(&self) -> bool {
+        if let Some(dex_type) = &self.dex_program_type {
+            if *dex_type == DexProgramType::PumpBondCurve || *dex_type == DexProgramType::PumpAAM {
+                return true;
+            }
+        }
+        return false;
+    }
     pub fn get_pump_bond_curve_transaction_info(&self) -> PumpBondCurveTransactionInfo {
         PumpBondCurveTransactionInfo::new(self)
     }
@@ -2947,8 +2959,21 @@ mod tests {
             .get_transaction_display_details_batch(signs)
             .await
             .unwrap();
-        println!("Batch Query Results: {:?}", trade_infos);
         println!("Batch Query Results Count: {:?}", trade_infos.len());
+        for info in trade_infos {
+            println!(
+                "
+                ==========================================
+                hash: {:?}\n,
+                is swap: {:?}\n,
+                is pump transcation: {:?},
+                ==========================================
+                ",
+                info.transaction_hash,
+                if info.is_swap() { "Yes" } else { "No" },
+                if info.is_pump() { "Yes" } else { "No" }
+            );
+        }
         Ok(())
     }
 
