@@ -2778,7 +2778,7 @@ mod tests {
     async fn test_parse_trade_info() -> Result<(), ()> {
         let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
         let trade = solana.create_trade();
-        let trade_info = trade.get_transaction_display_details("67rZwUGivAdym8CX82CyiXsgzxf8u1UQw4u7m28S2ZPoGLhPuGkWHRPYUfAhKpvbKYB2AFEe3pn2DmtYQ6ChrmY9").await.unwrap();
+        let trade_info = trade.get_transaction_display_details("355VXvDeiwmq3G4q565GXqHGCaPYz4y411RB93H3UAuRSF5Lu7FfGDyfc1NftPzzQMyU8Ggy1Y29wLZBMrgjqmmU").await.unwrap();
         println!("=====================================================");
         println!("Signature: {:?}", trade_info.transaction_hash);
         println!(

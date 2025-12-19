@@ -4,6 +4,7 @@ pub mod global;
 pub mod message;
 pub mod pyth;
 pub mod scan;
+pub mod spl;
 pub mod tool;
 pub mod trade;
 pub mod types;
@@ -18,6 +19,7 @@ use crate::{
     block::Block,
     global::{SOLANA_DEV_NET_URL, SOLANA_OFFICIAL_MAIN_NET_URL, SOLANA_TEST_NET_URL},
     scan::Scan,
+    spl::Spl,
     trade::{Trade, TransactionInfo},
     types::{Mode, UnifiedError, UnifiedResult},
 };
@@ -201,5 +203,9 @@ impl Solana {
     /// create scan
     pub fn create_scan(&self) -> Scan {
         Scan::new(self.client_arc())
+    }
+    /// create spl
+    pub fn create_spl(&self) -> Spl {
+        Spl::new(self.client_arc())
     }
 }
