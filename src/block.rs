@@ -63,11 +63,11 @@ pub struct Reward {
     pub reward_type: Option<String>,
 }
 
-pub struct BlockService {
+pub struct Block {
     client: Arc<RpcClient>,
 }
 
-impl BlockService {
+impl Block {
     pub fn new(client: Arc<RpcClient>) -> Self {
         Self { client }
     }
@@ -125,7 +125,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_block_by_slot() {
         let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
-        let service = BlockService::new(solana.client_arc());
+        let service = Block::new(solana.client_arc());
         let current_slot = solana.client_arc().get_slot().await.unwrap();
         let trade = solana.create_trade();
         let slot = current_slot - 100;
@@ -142,7 +142,7 @@ mod tests {
     #[tokio::test]
     async fn test_poll_latest_block() {
         let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
-        let service = BlockService::new(solana.client_arc());
+        let service = Block::new(solana.client_arc());
         let trade = solana.create_trade();
         service
             .poll_latest_block(async |block_info| match block_info {

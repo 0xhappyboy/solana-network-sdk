@@ -15,8 +15,9 @@ use std::{str::FromStr, sync::Arc};
 
 use crate::{
     account::Account,
-    block::BlockService,
+    block::Block,
     global::{SOLANA_DEV_NET_URL, SOLANA_OFFICIAL_MAIN_NET_URL, SOLANA_TEST_NET_URL},
+    scan::Scan,
     trade::{Trade, TransactionInfo},
     types::{Mode, UnifiedError, UnifiedResult},
 };
@@ -194,7 +195,11 @@ impl Solana {
         Trade::new(self.client_arc())
     }
     /// create block service
-    pub fn create_block_service(&self) -> BlockService {
-        BlockService::new(self.client_arc())
+    pub fn create_block_service(&self) -> Block {
+        Block::new(self.client_arc())
+    }
+    /// create scan
+    pub fn create_scan(&self) -> Scan {
+        Scan::new(self.client_arc())
     }
 }
