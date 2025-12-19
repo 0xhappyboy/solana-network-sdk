@@ -118,7 +118,7 @@ impl Block {
 
 #[cfg(test)]
 mod tests {
-    use crate::Solana;
+    use crate::{Solana, tool::trade};
 
     use super::*;
 
@@ -126,16 +126,33 @@ mod tests {
     async fn test_get_block_by_slot() {
         let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
         let service = Block::new(solana.client_arc());
-        let current_slot = solana.client_arc().get_slot().await.unwrap();
+        let block_info = service.get_block_by_slot(387744706).await;
+        println!(
+            "Transaction Quantity: {:?}",
+            block_info.unwrap().unwrap().transaction_signatures.len()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_block_by_slot_is_vote_program() {
+        let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
+        let service = Block::new(solana.client_arc());
+        let block_info = service.get_block_by_slot(387744706).await;
         let trade = solana.create_trade();
-        let slot = current_slot - 100;
-        let block = service.get_block_by_slot(slot).await.unwrap().unwrap();
-        for s in block.transaction_signatures {
-            let t = trade
-                .get_transaction_display_details(&format!("{:?}", s))
+        for sign in block_info.unwrap().unwrap().transaction_signatures {
+            let trade_info = trade
+                .get_transaction_display_details(&format!("{:?}", sign))
                 .await
                 .unwrap();
-            println!("block transaction: {:?}", t);
+            println!(
+                "Tx: {:?}, Is Vote Program: {:?}",
+                sign,
+                if (trade_info.is_vote_program()) {
+                    "Yes"
+                } else {
+                    "No"
+                }
+            );
         }
     }
 

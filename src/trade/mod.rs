@@ -4,6 +4,7 @@ use std::{str::FromStr, sync::Arc};
 
 use base64::Engine;
 use base64::engine::general_purpose;
+use futures::future::join_all;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use solana_client::{
@@ -543,6 +544,88 @@ impl Trade {
         }
     }
 
+    /// Get transaction details in batch
+    ///
+    /// # Parameters
+    /// signatures - Array of transaction signature strings (slice)
+    ///
+    /// # Returns
+    /// `Result<Vec<EncodedConfirmedTransactionWithStatusMeta>, String>`
+    /// - `Ok(transactions)`: List of successfully retrieved transaction details
+    /// - `Err(error)`: Error during batch query process (e.g., network error)
+    ///
+    /// # Features
+    /// - Executes multiple transaction queries in parallel for improved efficiency
+    /// - Automatically filters failed queries, returning only successful transactions
+    /// - Individual query failures do not affect other queries
+    ///
+    /// # Example
+    /// ```rust
+    /// let solana = Solana::new(solana_trader::types::Mode::MAIN).unwrap();
+    /// let trade = solana.create_trade();
+    ///
+    /// let signatures = vec![
+    ///     "4x4b2F6...", // transaction signature 1
+    ///     "5y5c3G7...", // transaction signature 2
+    ///     "6z6d4H8...", // transaction signature 3
+    /// ];
+    ///
+    /// // Batch query transactions
+    /// let transactions = trade.get_transaction_details_batch(&signatures).await?;
+    ///
+    /// // Process each transaction
+    /// for tx in transactions {
+    ///     let tx_info = TransactionInfo::from_encoded_transaction(&tx, "signature");
+    ///     println!("Transaction slot: {}", tx_info.slot);
+    /// }
+    /// ```
+    ///
+    /// # Performance Recommendations
+    /// - Recommended to query no more than 50 transaction signatures at once to avoid RPC limits
+    /// - For large numbers of queries, consider batching them
+    /// - Failed queries output error messages to stderr without interrupting the entire batch operation
+    pub async fn get_transaction_details_batch(
+        &self,
+        signatures: Vec<&str>,
+    ) -> Result<Vec<EncodedConfirmedTransactionWithStatusMeta>, String> {
+        let mut futures = Vec::new();
+        for signature in signatures {
+            let signature_str = signature.to_string();
+            let client = self.client.clone();
+            let future = async move {
+                match Signature::from_str(&signature_str) {
+                    Ok(sig) => {
+                        let config = RpcTransactionConfig {
+                            encoding: Some(UiTransactionEncoding::Json),
+                            commitment: None,
+                            max_supported_transaction_version: Some(0),
+                        };
+                        match client.get_transaction_with_config(&sig, config).await {
+                            Ok(transaction) => Ok(transaction),
+                            Err(e) => Err(format!(
+                                "get transaction error for {}: {:?}",
+                                signature_str, e
+                            )),
+                        }
+                    }
+                    Err(_) => Err(format!("invalid signature: {}", signature_str)),
+                }
+            };
+            futures.push(future);
+        }
+        let results = join_all(futures).await;
+        let mut successful_transactions = Vec::new();
+        for result in results {
+            match result {
+                Ok(tx) => successful_transactions.push(tx),
+                Err(e) => {
+                    eprintln!("Transaction query error: {}", e);
+                }
+            }
+        }
+        Ok(successful_transactions)
+    }
+
     /// get transaction details
     ///
     /// # params
@@ -566,6 +649,40 @@ impl Trade {
                 .unwrap(),
             signature,
         ))
+    }
+
+    /// get transaction details in batch
+    ///
+    /// # params
+    /// signatures - transaction signature hash string array
+    ///
+    /// # Example
+    /// ```rust
+    /// let solana = Solana::new(solana_trader::types::Mode::DEV).unwrap();
+    /// let trade = solana.create_trade();
+    /// let transaction_infos = trade.get_transaction_display_details_batch(&["signature1", "signature2"]).await;
+    /// ```
+    pub async fn get_transaction_display_details_batch(
+        &self,
+        signatures: Vec<&str>,
+    ) -> UnifiedResult<Vec<TransactionInfo>, String> {
+        let raw_transactions = self
+            .get_transaction_details_batch(signatures.clone())
+            .await
+            .map_err(|e| format!("get batch transaction details error: {}", e))
+            .unwrap();
+        let transaction_infos = raw_transactions
+            .iter()
+            .enumerate()
+            .filter_map(|(i, tx)| {
+                if i < signatures.len() {
+                    Some(TransactionInfo::from_encoded_transaction(tx, signatures[i]))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        Ok(transaction_infos)
     }
 }
 
@@ -1872,10 +1989,8 @@ impl TransactionInfo {
                 info.inner_instructions = vec![];
             }
         }
-
         // parse balance changes
         Self::parse_balance_changes(info, meta, tx);
-
         // token balance
         match &meta.pre_token_balances {
             OptionSerializer::Some(pre_token_balances) => {
@@ -1900,7 +2015,6 @@ impl TransactionInfo {
                 info.pre_token_balances = vec![];
             }
         }
-
         match &meta.post_token_balances {
             OptionSerializer::Some(post_token_balances) => {
                 info.post_token_balances = post_token_balances
@@ -2726,6 +2840,36 @@ impl TransactionInfo {
     }
 }
 
+impl TransactionInfo {
+    pub fn is_vote_program(&self) -> bool {
+        use crate::global::VOTE_PROGRAM_ID;
+        if self.program_id == *VOTE_PROGRAM_ID {
+            return true;
+        }
+        for instruction in &self.instructions {
+            if instruction.program_id == *VOTE_PROGRAM_ID {
+                return true;
+            }
+        }
+        for inner_instruction in &self.inner_instructions {
+            for instruction in &inner_instruction.instructions {
+                if instruction.program_id == *VOTE_PROGRAM_ID {
+                    return true;
+                }
+            }
+        }
+        for log in &self.logs {
+            if log.contains(VOTE_PROGRAM_ID) {
+                return true;
+            }
+            if log.contains("vote") && (log.contains("program") || log.contains("Program")) {
+                return true;
+            }
+        }
+        false
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TransactionStatus {
     Success,
@@ -2773,6 +2917,40 @@ struct CompiledTransferInfo {
 #[cfg(test)]
 mod tests {
     use crate::Solana;
+
+    #[tokio::test]
+    async fn test_get_transaction_display_details_batch() -> Result<(), ()> {
+        let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
+        let trade = solana.create_trade();
+        let signs = vec![
+            "28sRV5e3NYhy9CR8r5Es8vYYouF95VZpkYjMr65fAziYMzFzHjCpbpb6YmFB5pusa6ZD3LbJo2kM8iH8mjT21QXq",
+            "j8Vs7qDSU1qmGaN4mRfiVLbX1vxwEPhVgHEqQnzzbvG7Z5LWKnQfu9ZyfMWk5Lpw1QenZgGhaiRFu8D2CaYGXaq",
+            "22zKdFE9Dd1x917h7f9yCYDmoYFTcVDrLJe58jwNgjrRnbzh4GXxney13b2AAPDbtD93HZC9kQa8G9tb9WLQDFae",
+            "3Rfy3QwXcXTGGvdDnt2yVuX4FkUbonBNJUcN1SKGzNiWxK9SudSnw3MFXU8PsC17o1j5TNX7Jeemx51kn2brosbG",
+            "vcrEnzsx3mdqoLccxramUD4A65KfG8ippcWACRLYPF5tq7MNWBSpyeJhEX51fKrYFV66xuEi3Htmgxrjtwm9K5L",
+            "3mrYV3rzxWmekwyeSVP2KLhQsTUs3JSAAKTg4fobWkdrVi7jicX9U8okySKYcHGsqjpQKmbSvo1SSdjPVFokoUvQ",
+            "2P43xMwMzVBjnnSxKgVtXs7jApF9cpBigXWCjsuhs52xxi7axwWrxjDX7Wvy4pbLLiYUgBTBhwNDNvjmrBMUFWok",
+            "4Vfdy5hpgpi2yiVuuPP7e1tq83K31u1amXXuK1AjKFFEzH8tXZDbaAuqNFPTJ4MJCCvXhNkdMS3FSZUUyKH6tVBD",
+            "34VPwTWQAXYEjAQRinhxAbEHaGULXt6uPcLjPfzcfX26ZBUQER8VebeFS9xsEYCdd3caMHRJvCES8LG2q6M9JNmx",
+            "3uMea311NS4hEmPe9mJbmPxS6C5wKDK3Urj6oMnaE6MzXoB3Ydt1z5LyAZGTDguZbh6MiEMvV9sGYp8uZWVUxEYj",
+            "2ghLVUfrxaXJCXFrs7V8Y4S45XkdVkgTkjsv16cGgHzRCm5nF54ySDx3jdfU6BwcmA58K1C46NgbmS3CgMbyCS3S",
+            "5gKTTkuboEZoNys4cK3T3sM5x52y14tWLjRKbFeQQmXPfTst5GpPFDWNo9r1Dc9Ns4ivj6d5VcDwNSFT6WSaaJv8",
+            "2SB72xuo8EMyCBZsFt1Hrt9eVXR3qeoq1p3naNaSkTnQkvqr73xTwCtuWqg3tjMsgCC98LVsEzHDUMhirwEcZzjr",
+            "4JyQcwxqaXgC74kLV7Cxp8zCctjDRQY2ywRGsUJ5QpkRg9gTRWk6hQAhkJVeDQWTeDQEiDhh8iK621QybCTRBDwL",
+            "3hdkaxLkG9XnHAhP2e16uqjsehi6HGNT2b5HKtYY79S83Gz9Dh2ApfGXdoMsBFUEfUjFR26mXAj3XgSone5SSvg9",
+            "4Br83oFTZh3CsxA93Kq2m1dbzV8AEKZSCU5Jc4g8AhcQnegcGKii8G68tVA4JmKLiTSDEtY63SU3HiwiK8vCLZzU",
+            "YomXdFYSfLCyfoHUQxAxFAs5jCeNXgQhkg5USuU1b7yJ4iwBGXUzPVLMw6HhL95EC7pnt77hXhVtUoAi5Nun4tX",
+            "4RsEzDjVEkakioFnYZaNe2gWwfi2KiuZ35m1rPgr7gtaA4uthYSEeMXyJT61nYELVEiewiL4m1C2ScE3t45pSxy4",
+            "3TMCCijBZaFgCsqBTj5jJu5XTwYEfcFfgDHMk4fLQ1Vc3sEf2qUGR9ffyZL3im9DncXsui8R3Lgy7gyXV1DrRrg6",
+        ];
+        let trade_infos = trade
+            .get_transaction_display_details_batch(signs)
+            .await
+            .unwrap();
+        println!("Batch Query Results: {:?}", trade_infos);
+        println!("Batch Query Results Count: {:?}", trade_infos.len());
+        Ok(())
+    }
 
     #[tokio::test]
     async fn test_parse_trade_info() -> Result<(), ()> {

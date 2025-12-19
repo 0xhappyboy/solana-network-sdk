@@ -3917,6 +3917,7 @@ dependencies = [
  "bs58",
  "bytemuck",
  "chrono",
+ "futures",
  "reqwest",
  "serde",
  "serde_json",

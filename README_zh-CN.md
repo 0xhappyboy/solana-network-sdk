@@ -37,6 +37,49 @@ async fn main() -> Result<(), String> {
 
 ```
 
+## 批量查询交易信息.
+
+```rust
+#[cfg(test)]
+mod tests {
+    use crate::Solana;
+
+    #[tokio::test]
+    async fn test_get_transaction_display_details_batch() -> Result<(), ()> {
+        let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
+        let trade = solana.create_trade();
+        let signs = vec![
+            "28sRV5e3NYhy9CR8r5Es8vYYouF95VZpkYjMr65fAziYMzFzHjCpbpb6YmFB5pusa6ZD3LbJo2kM8iH8mjT21QXq",
+            "j8Vs7qDSU1qmGaN4mRfiVLbX1vxwEPhVgHEqQnzzbvG7Z5LWKnQfu9ZyfMWk5Lpw1QenZgGhaiRFu8D2CaYGXaq",
+            "22zKdFE9Dd1x917h7f9yCYDmoYFTcVDrLJe58jwNgjrRnbzh4GXxney13b2AAPDbtD93HZC9kQa8G9tb9WLQDFae",
+            "3Rfy3QwXcXTGGvdDnt2yVuX4FkUbonBNJUcN1SKGzNiWxK9SudSnw3MFXU8PsC17o1j5TNX7Jeemx51kn2brosbG",
+            "vcrEnzsx3mdqoLccxramUD4A65KfG8ippcWACRLYPF5tq7MNWBSpyeJhEX51fKrYFV66xuEi3Htmgxrjtwm9K5L",
+            "3mrYV3rzxWmekwyeSVP2KLhQsTUs3JSAAKTg4fobWkdrVi7jicX9U8okySKYcHGsqjpQKmbSvo1SSdjPVFokoUvQ",
+            "2P43xMwMzVBjnnSxKgVtXs7jApF9cpBigXWCjsuhs52xxi7axwWrxjDX7Wvy4pbLLiYUgBTBhwNDNvjmrBMUFWok",
+            "4Vfdy5hpgpi2yiVuuPP7e1tq83K31u1amXXuK1AjKFFEzH8tXZDbaAuqNFPTJ4MJCCvXhNkdMS3FSZUUyKH6tVBD",
+            "34VPwTWQAXYEjAQRinhxAbEHaGULXt6uPcLjPfzcfX26ZBUQER8VebeFS9xsEYCdd3caMHRJvCES8LG2q6M9JNmx",
+            "3uMea311NS4hEmPe9mJbmPxS6C5wKDK3Urj6oMnaE6MzXoB3Ydt1z5LyAZGTDguZbh6MiEMvV9sGYp8uZWVUxEYj",
+            "2ghLVUfrxaXJCXFrs7V8Y4S45XkdVkgTkjsv16cGgHzRCm5nF54ySDx3jdfU6BwcmA58K1C46NgbmS3CgMbyCS3S",
+            "5gKTTkuboEZoNys4cK3T3sM5x52y14tWLjRKbFeQQmXPfTst5GpPFDWNo9r1Dc9Ns4ivj6d5VcDwNSFT6WSaaJv8",
+            "2SB72xuo8EMyCBZsFt1Hrt9eVXR3qeoq1p3naNaSkTnQkvqr73xTwCtuWqg3tjMsgCC98LVsEzHDUMhirwEcZzjr",
+            "4JyQcwxqaXgC74kLV7Cxp8zCctjDRQY2ywRGsUJ5QpkRg9gTRWk6hQAhkJVeDQWTeDQEiDhh8iK621QybCTRBDwL",
+            "3hdkaxLkG9XnHAhP2e16uqjsehi6HGNT2b5HKtYY79S83Gz9Dh2ApfGXdoMsBFUEfUjFR26mXAj3XgSone5SSvg9",
+            "4Br83oFTZh3CsxA93Kq2m1dbzV8AEKZSCU5Jc4g8AhcQnegcGKii8G68tVA4JmKLiTSDEtY63SU3HiwiK8vCLZzU",
+            "YomXdFYSfLCyfoHUQxAxFAs5jCeNXgQhkg5USuU1b7yJ4iwBGXUzPVLMw6HhL95EC7pnt77hXhVtUoAi5Nun4tX",
+            "4RsEzDjVEkakioFnYZaNe2gWwfi2KiuZ35m1rPgr7gtaA4uthYSEeMXyJT61nYELVEiewiL4m1C2ScE3t45pSxy4",
+            "3TMCCijBZaFgCsqBTj5jJu5XTwYEfcFfgDHMk4fLQ1Vc3sEf2qUGR9ffyZL3im9DncXsui8R3Lgy7gyXV1DrRrg6",
+        ];
+        let trade_infos = trade
+            .get_transaction_display_details_batch(signs)
+            .await
+            .unwrap();
+        println!("Batch Query Results: {:?}", trade_infos);
+        println!("Batch Query Results Count: {:?}", trade_infos.len());
+        Ok(())
+    }
+}
+```
+
 ## 获取指定交易中代币与报价代币之间($sol)的比率.
 
 ```rust
