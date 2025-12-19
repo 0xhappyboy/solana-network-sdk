@@ -1396,6 +1396,66 @@ impl TransactionInfo {
         }
     }
 
+    pub fn get_token_quote_ratio(&self) -> Option<f64> {
+        use crate::global::QUOTES;
+        if let Some(dex_type) = &self.dex_program_type {
+            if *dex_type == crate::types::DexProgramType::PumpBondCurve {
+                return self
+                    .get_pump_bond_curve_transaction_info()
+                    .get_token_quote_ratio();
+            }
+        }
+        let direction = self.getDirection();
+        match direction {
+            Direction::Buy => {
+                if let Some((spent_token, spent_amount)) = self.get_spent_token() {
+                    if QUOTES.contains(&spent_token.as_str()) {
+                        if let Some((received_token, received_amount)) = self.get_received_token() {
+                            if !QUOTES.contains(&received_token.as_str()) && received_amount > 0 {
+                                let spent_decimals =
+                                    self.get_token_decimals_for_mint(&spent_token)?;
+                                let received_decimals =
+                                    self.get_token_decimals_for_mint(&received_token)?;
+                                let spent_f64 =
+                                    spent_amount as f64 / 10_u64.pow(spent_decimals as u32) as f64;
+                                let received_f64 = received_amount as f64
+                                    / 10_u64.pow(received_decimals as u32) as f64;
+                                return Some(spent_f64 / received_f64);
+                            }
+                        }
+                    }
+                }
+            }
+            Direction::Sell => {
+                if let Some((spent_token, spent_amount)) = self.get_spent_token() {
+                    if !QUOTES.contains(&spent_token.as_str()) && spent_amount > 0 {
+                        if let Some((received_token, received_amount)) = self.get_received_token() {
+                            if QUOTES.contains(&received_token.as_str()) {
+                                let spent_decimals =
+                                    self.get_token_decimals_for_mint(&spent_token)?;
+                                let received_decimals =
+                                    self.get_token_decimals_for_mint(&received_token)?;
+                                let spent_f64 =
+                                    spent_amount as f64 / 10_u64.pow(spent_decimals as u32) as f64;
+                                let received_f64 = received_amount as f64
+                                    / 10_u64.pow(received_decimals as u32) as f64;
+                                return Some(received_f64 / spent_f64);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(left_amount_sol) = self.get_pool_left_amount_sol() {
+            if let Some(right_amount_sol) = self.get_pool_right_amount_sol() {
+                if left_amount_sol > 0.0 {
+                    return Some(right_amount_sol / left_amount_sol);
+                }
+            }
+        }
+        None
+    }
+
     // Get the maximum amount of a specified token address
     fn get_max_amount_for_mint(&self, mint: &str) -> Option<u64> {
         use crate::global::SOL;
@@ -2708,4 +2768,21 @@ struct CompiledTransferInfo {
     from: String,
     to: String,
     amount: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Solana;
+
+    #[tokio::test]
+    async fn test_get_token_quote_ratio() -> Result<(), ()> {
+        let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
+        let trade = solana.create_trade();
+        let t_info = trade.get_transaction_display_details("5ChbVDpaKdmKDVTc4tAPa7NHDR3rS31cxTH6ZJWpjZbmRRAYPsxXNLGxXJkvMXNjbKhAvrUmYFUTCtxbRyerfxF1").await.unwrap();
+        println!(
+            "Quote Token Ratio: {}",
+            t_info.get_token_quote_ratio().unwrap()
+        );
+        Ok(())
+    }
 }

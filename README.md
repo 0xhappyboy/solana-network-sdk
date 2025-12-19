@@ -37,6 +37,27 @@ async fn main() -> Result<(), String> {
 
 ```
 
+## Get the ratio ($sol) between the token and the quoted token in a specified transaction.
+
+```rust
+#[cfg(test)]
+mod tests {
+    use crate::Solana;
+
+    #[tokio::test]
+    async fn test_get_token_quote_ratio() -> Result<(), ()> {
+        let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
+        let trade = solana.create_trade();
+        let t_info = trade.get_transaction_display_details("5ChbVDpaKdmKDVTc4tAPa7NHDR3rS31cxTH6ZJWpjZbmRRAYPsxXNLGxXJkvMXNjbKhAvrUmYFUTCtxbRyerfxF1").await.unwrap();
+        println!(
+            "Quote Token Ratio: {}",
+            t_info.get_token_quote_ratio().unwrap()
+        );
+        Ok(())
+    }
+}
+```
+
 ## Listen for all the latest transactions in the latest block.
 
 ```rust

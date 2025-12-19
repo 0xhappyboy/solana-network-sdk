@@ -1,7 +1,7 @@
-use crate::global::{SOL, SPL_TOKEN_PROGRAM_V1, USDC, USDT};
+use crate::global::{QUOTES, SOL, SPL_TOKEN_PROGRAM_V1, USDC, USDT};
 use crate::{trade::TransactionInfo, types::Direction};
-use base64::{self, Engine};
 use base64::engine::general_purpose;
+use base64::{self, Engine};
 use solana_sdk::native_token::LAMPORTS_PER_SOL;
 
 pub struct PumpBondCurveTransactionInfo<'a> {
@@ -11,6 +11,56 @@ pub struct PumpBondCurveTransactionInfo<'a> {
 impl<'a> PumpBondCurveTransactionInfo<'a> {
     pub fn new(transaction_info: &'a TransactionInfo) -> Self {
         Self { transaction_info }
+    }
+
+    pub fn get_token_quote_ratio(&self) -> Option<f64> {
+        let direction = self.get_pump_direction()?;
+        match direction {
+            Direction::Buy => {
+                if let Some((spent_token, spent_amount)) = self.get_pump_spent_token() {
+                    if QUOTES.contains(&spent_token.as_str()) {
+                        if let Some((received_token, received_amount)) =
+                            self.get_pump_received_token()
+                        {
+                            if !QUOTES.contains(&received_token.as_str()) && received_amount > 0 {
+                                let spent_decimals = self.get_pump_token_decimals(&spent_token)?;
+                                let received_decimals =
+                                    self.get_pump_token_decimals(&received_token)?;
+                                let spent_f64 =
+                                    spent_amount as f64 / 10_u64.pow(spent_decimals as u32) as f64;
+                                let received_f64 = received_amount as f64
+                                    / 10_u64.pow(received_decimals as u32) as f64;
+                                return Some(spent_f64 / received_f64);
+                            }
+                        }
+                    }
+                }
+            }
+            Direction::Sell => {
+                if let Some((spent_token, spent_amount)) = self.get_pump_spent_token() {
+                    if !QUOTES.contains(&spent_token.as_str()) && spent_amount > 0 {
+                        if let Some((received_token, received_amount)) =
+                            self.get_pump_received_token()
+                        {
+                            if QUOTES.contains(&received_token.as_str()) {
+                                let spent_decimals = self.get_pump_token_decimals(&spent_token)?;
+                                let received_decimals =
+                                    self.get_pump_token_decimals(&received_token)?;
+                                let spent_f64 =
+                                    spent_amount as f64 / 10_u64.pow(spent_decimals as u32) as f64;
+                                let received_f64 = received_amount as f64
+                                    / 10_u64.pow(received_decimals as u32) as f64;
+                                return Some(received_f64 / spent_f64);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(price_sol) = self.get_pump_token_price_sol() {
+            return Some(price_sol);
+        }
+        None
     }
 
     pub fn get_pump_pool_left_address(&self) -> Option<String> {
