@@ -2775,6 +2775,26 @@ mod tests {
     use crate::Solana;
 
     #[tokio::test]
+    async fn test_parse_trade_info() -> Result<(), ()> {
+        let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
+        let trade = solana.create_trade();
+        let trade_info = trade.get_transaction_display_details("67rZwUGivAdym8CX82CyiXsgzxf8u1UQw4u7m28S2ZPoGLhPuGkWHRPYUfAhKpvbKYB2AFEe3pn2DmtYQ6ChrmY9").await.unwrap();
+        println!("=====================================================");
+        println!("Signature: {:?}", trade_info.transaction_hash);
+        println!(
+            "Is Swap: {:?}",
+            if trade_info.is_swap { "Yes" } else { "No" }
+        );
+        println!("Token: {:?}", trade_info.get_pool_left_address());
+        println!("Quote Token: {:?}", trade_info.get_pool_right_address());
+        println!("Received Token: {:?}", trade_info.get_received_token_sol());
+        println!("Spent Token: {:?}", trade_info.get_spent_token_sol());
+        println!("Quote Ratio: {:?}", trade_info.get_token_quote_ratio());
+        println!("=====================================================");
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_get_token_quote_ratio() -> Result<(), ()> {
         let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
         let trade = solana.create_trade();

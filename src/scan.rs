@@ -239,6 +239,33 @@ mod tests {
     use std::time::Duration;
 
     #[tokio::test]
+    async fn test_get_last_signatures() -> Result<(), ()> {
+        let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
+        let trade = solana.create_trade();
+        let scan = Arc::new(solana.create_scan());
+        let signs = scan
+            .get_last_signatures("AmK2hPHoHktE2tcJWKbfMpYR3JiMdS3J19xGdHX4ZCLK", 10)
+            .await
+            .unwrap();
+        for sign in signs {
+            let trade_info = trade.get_transaction_display_details(&sign).await.unwrap();
+            println!("=====================================================");
+            println!("Signature: {:?}", trade_info.transaction_hash);
+            println!(
+                "Is Swap: {:?}",
+                if trade_info.is_swap { "Yes" } else { "No" }
+            );
+            println!("Token: {:?}", trade_info.get_pool_left_address());
+            println!("Quote Token: {:?}", trade_info.get_pool_right_address());
+            println!("Received Token: {:?}", trade_info.get_received_token_sol());
+            println!("Spent Token: {:?}", trade_info.get_spent_token_sol());
+            println!("Quote Ratio: {:?}", trade_info.get_token_quote_ratio());
+            println!("=====================================================");
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_get_all_signatures_by_address() -> Result<(), ()> {
         let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
         let scan = Arc::new(solana.create_scan());
