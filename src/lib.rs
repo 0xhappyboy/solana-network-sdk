@@ -1,4 +1,5 @@
 pub mod account;
+pub mod block;
 pub mod global;
 pub mod message;
 pub mod pyth;
@@ -14,6 +15,7 @@ use std::{str::FromStr, sync::Arc};
 
 use crate::{
     account::Account,
+    block::BlockService,
     global::{SOLANA_DEV_NET_URL, SOLANA_OFFICIAL_MAIN_NET_URL, SOLANA_TEST_NET_URL},
     trade::{Trade, TransactionInfo},
     types::{Mode, UnifiedError, UnifiedResult},
@@ -190,5 +192,9 @@ impl Solana {
     /// create trade
     pub fn create_trade(&self) -> Trade {
         Trade::new(self.client_arc())
+    }
+    /// create block service
+    pub fn create_block_service(&self) -> BlockService {
+        BlockService::new(self.client_arc())
     }
 }

@@ -37,11 +37,44 @@ async fn main() -> Result<(), String> {
 
 ```
 
-## Trade Module
+## Listen for all the latest transactions in the latest block.
 
-The Trade module provides functionality for interacting with the Solana blockchain, including obtaining transaction history, analyzing transaction details, and checking address relationships.
+```rust
+#[cfg(test)]
+mod tests {
+    use crate::Solana;
 
-### Get the actual token addresses and amount added and removed during the transaction.
+    use super::*;
+
+    #[tokio::test]
+    async fn test_poll_latest_block() {
+        let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
+        let service = BlockService::new(solana.client_arc());
+        let trade = solana.create_trade();
+        service
+            .poll_latest_block(async |block_info| match block_info {
+                Some(info) => {
+                    for sig in info.transaction_signatures {
+                        println!("Signature: {:?}", sig);
+                        let t = trade
+                            .get_transaction_display_details(&format!("{:?}", sig))
+                            .await
+                            .unwrap();
+                        let pump_t = t.get_pump_bond_curve_transaction_info();
+                        println!("Received : {:?}", t.get_received_token_sol());
+                        println!("Spent : {:?}", t.get_spent_token_sol());
+                        println!("Pump Received : {:?}", pump_t.get_pump_received_token_sol());
+                        println!("Pump Spent : {:?}", pump_t.get_pump_spent_token_sol());
+                    }
+                }
+                None => (),
+            })
+            .await;
+    }
+}
+```
+
+## Get the actual token addresses and amount added and removed during the transaction.
 
 ```rust
 #[tokio::test]
@@ -58,7 +91,7 @@ async fn a() {
 }
 ```
 
-### Retrieve base/quote tokens from the liquidity pool specified in the signature.
+## Retrieve base/quote tokens from the liquidity pool specified in the signature.
 
 ```rust
 #[tokio::test]
@@ -75,7 +108,7 @@ async fn a() {
 }
 ```
 
-### Get the actual token addresses and amount added and removed during the pump.fun bond curve transaction.
+## Get the actual token addresses and amount added and removed during the pump.fun bond curve transaction.
 
 ```rust
 #[tokio::test]
@@ -91,7 +124,7 @@ async fn a() {
 }
 ```
 
-### Estimate Transaction Fee
+## Estimate Transaction Fee
 
 ```rust
 let solana = Solana::new(Mode::DEV).unwrap();
@@ -103,7 +136,7 @@ Err(e) => eprintln!("Error estimating fee: {}", e),
 }
 ```
 
-### Get Transaction History with Pagination
+## Get Transaction History with Pagination
 
 ```rust
 let mut cursor: Option<String> = None;
@@ -142,7 +175,7 @@ println!("Retrieved {} transactions", transactions.len());
 }
 ```
 
-### Get Filtered Transaction History
+## Get Filtered Transaction History
 
 ```rust
 let client = solana.client_arc();
@@ -174,7 +207,7 @@ address,
 ).await?;
 ```
 
-### Get Last Transaction Containing Another Address
+## Get Last Transaction Containing Another Address
 
 ```rust
 let address_a = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
@@ -192,7 +225,7 @@ Err(e) => eprintln!("Error: {}", e),
 }
 ```
 
-### Get All Transactions Containing Another Address
+## Get All Transactions Containing Another Address
 
 ```rust
 let address_a = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
@@ -213,7 +246,7 @@ println!("Found {} transactions containing both addresses", transactions.len());
 }
 ```
 
-### Get Transaction Details
+## Get Transaction Details
 
 ```rust
 let signature = "5h6xBEauJ3PK6SWZrW5M4Q7GjS2eX2jGqKJ8H9i0K1L2M3N4O5P6Q7R8S9T0U1V2W3X4Y5Z6A7B8C9D0";
@@ -239,7 +272,7 @@ signature,
 }
 ```
 
-### Get Transactions by Recipient and Payer (Loose)
+## Get Transactions by Recipient and Payer (Loose)
 
 ```rust
 let recipient = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
@@ -260,7 +293,7 @@ transactions.len(), recipient, payer);
 }
 ```
 
-### Get Transactions by Recipient and Payer (Strict)
+## Get Transactions by Recipient and Payer (Strict)
 
 ```rust
 let recipient = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
@@ -291,7 +324,7 @@ transactions.len(), recipient, payer);
 }
 ```
 
-### Check Payment Relationship
+## Check Payment Relationship
 
 ```rust
 let recipient = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
@@ -308,7 +341,7 @@ Err(e) => eprintln!("Error checking payment relationship: {}", e),
 }
 ```
 
-### Get Total Payment Amount
+## Get Total Payment Amount
 
 ```rust
 let recipient = "8MwwTfMp86sJ3b9B9W6cB3k6yLx4F5Gt2jK7N8P9Q0R";
@@ -333,7 +366,7 @@ Err(e) => eprintln!("Error: {}", e),
 }
 ```
 
-### TransactionInfo Helper Methods
+## TransactionInfo Helper Methods
 
 ```rust
 // After obtaining a TransactionInfo object
@@ -387,7 +420,7 @@ signature,
 }
 ```
 
-### Analyze Address Relationships
+## Analyze Address Relationships
 
 ```rust
 async fn analyze_address_relationships(
@@ -442,7 +475,7 @@ println!("Analyzing relationship between {} and {}", address1, address2);
 
 ## Scan Module
 
-### Get All Historical Signatures
+## Get All Historical Signatures
 
 Fetches ALL historical transaction signatures for a given address using pagination.
 
@@ -478,7 +511,7 @@ async fn main() -> Result<(), String> {
 
 **Returns:** `Result<Vec<String>, String>`
 
-### Get Limited Number of Signatures
+## Get Limited Number of Signatures
 
 Fetches a specific number of transaction signatures with safety mechanisms.
 
@@ -513,7 +546,7 @@ async fn main() -> Result<(), String> {
 
 **Returns:** `Result<Vec<String>, String>`
 
-### Get Latest Signatures
+## Get Latest Signatures
 
 Quickly fetches the most recent transaction signatures without pagination.
 
@@ -546,7 +579,7 @@ async fn main() -> Result<(), String> {
 
 **Returns:** `Result<Vec<String>, String>`
 
-### Process Token Address Signatures
+## Process Token Address Signatures
 
 ```rust
 use solana_network_sdk::Solana;
