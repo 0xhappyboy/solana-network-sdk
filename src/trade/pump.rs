@@ -520,3 +520,29 @@ impl<'a> PumpBondCurveTransactionInfo<'a> {
         Some(6)
     }
 }
+
+impl<'a> PumpBondCurveTransactionInfo<'a> {
+    pub fn display(&self) {
+        println!(
+            "
+==================================
+Transaction Info
+==================================
+Trading Direction: {:?}
+Base Token Info: {:?} - {:?}
+Quote Token Info: {:?} - {:?}
+Received Token: {:?} - {:?}
+Spent Token: {:?} - {:?}
+            ",
+            self.get_pump_direction(),
+            self.get_pump_pool_left_address(),
+            self.get_pump_pool_left_amount_sol(),
+            self.get_pump_pool_right_address(),
+            self.get_pump_pool_right_amount_sol(),
+            self.get_pump_received_token(),
+            self.get_pump_received_token_sol(),
+            self.get_pump_spent_token(),
+            self.get_pump_spent_token_sol(),
+        );
+    }
+}

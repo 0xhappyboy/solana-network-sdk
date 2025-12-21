@@ -203,3 +203,56 @@ impl Solana {
         Spl::new(self.client_arc())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use raydium_sdk::Raydium;
+    use solana_network_client::SolanaClient;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_clmm_data_parsing() -> Result<(), Box<dyn std::error::Error>> {
+        let solana_client = SolanaClient::new(solana_network_client::Mode::MAIN).unwrap();
+        let raydium = Raydium::new(Arc::new(solana_client));
+        let pool_data = raydium
+            .get_liquidity_pool_clmm("DYZopjL34W4XpxbZaEjsCsXsrt6HbgE8WMCmPF1oPCwM")
+            .await;
+        println!("Pool Info: {:?}", pool_data);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_1() -> Result<(), Box<dyn std::error::Error>> {
+        let solana_client = SolanaClient::new(solana_network_client::Mode::MAIN).unwrap();
+        let raydium = Raydium::new(Arc::new(solana_client));
+        let pool_data = raydium
+            .get_liquidity_pool_cpmm("8Lq7gz2aEzkMQNfLpYmjv3V8JbD26LRbFd11SnRicCE6")
+            .await;
+        println!("Pool Info: {:?}", pool_data);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_2() -> Result<(), Box<dyn std::error::Error>> {
+        let solana_client = SolanaClient::new(solana_network_client::Mode::MAIN).unwrap();
+        let raydium = Raydium::new(Arc::new(solana_client));
+        // 58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2 SOL-USDC pool
+        let pool_data = raydium
+            .get_liquidity_pool_v4("58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2")
+            .await;
+        println!("Pool Info: {:?}", pool_data);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_launchpad_data_parsing() -> Result<(), Box<dyn std::error::Error>> {
+        let solana_client = SolanaClient::new(solana_network_client::Mode::MAIN).unwrap();
+        let raydium = Raydium::new(Arc::new(solana_client));
+        let pool_data = raydium
+            .get_liquidity_pool_launchpad("GSxb28CtEf9vJHEoB9D2NoNwbbkj8SxQN3WN86qvMULZ")
+            .await;
+        println!("Pool Info: {:?}", pool_data);
+        Ok(())
+    }
+}

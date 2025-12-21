@@ -24,6 +24,9 @@ pub const RAYDIUM_CPMM_POOL_PROGRAM_ID: &'static str =
 /// raydium clmm pool program id
 pub const RAYDIUM_CLMM_POOL_PROGRAM_ID: &'static str =
     "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK";
+/// raydium launchpad program id
+pub const RAYDIUM_LAUNCHPAD_PROGRAM_ID: &'static str =
+    "LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj";
 /// pump aam program id
 pub const PUMP_AAM_PROGRAM_ID: &'static str = "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA";
 /// pump.fun bond curve program id
@@ -34,5 +37,8 @@ pub const METEORA_DAMM_V2_PROGRAM_ID: &'static str = "cpamdpZCGKUy5JxQXB4dcpGPii
 pub const METEORA_DLMM_V2_PROGRAM_ID: &'static str = "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo";
 /// meteora pool program id
 pub const METEORA_POOL_PROGRAM_ID: &'static str = "Eo7WjKq67rjJQSZxS6z3YkapzY3eMj6Xy8X5EQVn5UaB";
+// meteora dynamic bond curve program id
+pub const METEORA_DYNAMIC_BOND_CURVE_PROGRAM_ID: &'static str =
+    "dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN";
 /// orca whirlpools program id
 pub const ORCA_WHIRLPOOLS_PROGRAM_ID: &'static str = "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc";

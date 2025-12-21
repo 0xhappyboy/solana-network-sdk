@@ -1,7 +1,7 @@
 pub mod trade {
     use std::collections::HashMap;
 
-    use crate::trade::TokenBalance;
+    use crate::trade::info::TokenBalance;
 
     pub fn build_signer_token_delta(
         pre: &[TokenBalance],
