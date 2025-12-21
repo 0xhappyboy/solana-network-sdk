@@ -3910,8 +3910,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "solana-network-client"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e204b1f033aada2bf80d428bf8d984ad8db812d92100a08a6fbce623ac9e1bc7"
+dependencies = [
+ "solana-client",
+ "solana-sdk",
+]
+
+[[package]]
 name = "solana-network-sdk"
-version = "0.4.7"
+version = "0.4.8"
 dependencies = [
  "base64 0.22.1",
  "bs58",
@@ -3923,6 +3933,7 @@ dependencies = [
  "serde_json",
  "solana-client",
  "solana-commitment-config",
+ "solana-network-client",
  "solana-program",
  "solana-sdk",
  "solana-transaction-status",

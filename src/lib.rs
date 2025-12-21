@@ -11,47 +11,35 @@ pub mod types;
 pub mod wallet;
 
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_network_client::SolanaClient;
 use solana_sdk::{epoch_info::EpochInfo, native_token::LAMPORTS_PER_SOL, pubkey::Pubkey};
 use std::{str::FromStr, sync::Arc};
 
 use crate::{
     account::Account,
     block::Block,
-    global::{SOLANA_DEV_NET_URL, SOLANA_OFFICIAL_MAIN_NET_URL, SOLANA_TEST_NET_URL},
     scan::Scan,
     spl::Spl,
-    trade::{Trade, TransactionInfo},
+    trade::Trade,
     types::{Mode, UnifiedError, UnifiedResult},
 };
 
 /// solana client Abstraction
 pub struct Solana {
     mode: Mode,
-    pub client: Option<Arc<RpcClient>>,
+    pub solana_client: Option<Arc<SolanaClient>>,
 }
 
 impl Solana {
     /// create solana object
     pub fn new(mode: Mode) -> Result<Solana, String> {
-        let mut url = String::new();
-        match mode {
-            Mode::MAIN => {
-                url = SOLANA_OFFICIAL_MAIN_NET_URL.to_string();
-            }
-            Mode::TEST => {
-                url = SOLANA_TEST_NET_URL.to_string();
-            }
-            Mode::DEV => {
-                url = SOLANA_DEV_NET_URL.to_string();
-            }
-            _ => {
-                return Err("create solana client mode does not meet requirements".to_string());
-            }
-        }
-        let client = RpcClient::new(url.clone());
         Ok(Self {
             mode,
-            client: Some(Arc::new(client)),
+            solana_client: Some(Arc::new(
+                SolanaClient::new(solana_network_client::Mode::MAIN)
+                    .map_err(|e| format!("create solana client error: {:?}", e))
+                    .unwrap(),
+            )),
         })
     }
     /// get client arc
@@ -61,8 +49,9 @@ impl Solana {
     /// let client = s.client_arc().await;
     /// ```
     pub fn client_arc(&self) -> Arc<RpcClient> {
-        Arc::clone(&self.client.as_ref().unwrap())
+        self.solana_client.as_ref().unwrap().client_arc()
     }
+
     /// get solana core version
     /// Example
     /// ```rust
@@ -79,6 +68,7 @@ impl Solana {
             }
         }
     }
+
     /// get feature set
     /// Example
     /// ```rust
@@ -95,6 +85,7 @@ impl Solana {
             }
         }
     }
+
     /// get block height
     /// Example
     /// ```rust
@@ -111,6 +102,7 @@ impl Solana {
             }
         }
     }
+
     /// last block hash
     /// Example
     /// ```rust
@@ -127,6 +119,7 @@ impl Solana {
             }
         }
     }
+
     /// get current slot
     /// Example
     /// ```rust
@@ -175,9 +168,10 @@ impl Solana {
 
     pub async fn get_account_data(&self, address: &str) -> UnifiedResult<Vec<u8>, String> {
         Ok(self
-            .client
-            .clone()
+            .solana_client
+            .as_ref()
             .unwrap()
+            .client_arc()
             .get_account_data(
                 &Pubkey::from_str(address)
                     .map_err(|e| UnifiedError::Error(format!("{:?}", e)))
