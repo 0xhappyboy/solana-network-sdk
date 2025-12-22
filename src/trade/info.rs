@@ -10,6 +10,7 @@ use solana_transaction_status::{
     UiTransactionTokenBalance,
 };
 
+use crate::Solana;
 use crate::global::{
     METEORA_DAMM_V2_PROGRAM_ID, METEORA_DLMM_V2_PROGRAM_ID, METEORA_DYNAMIC_BOND_CURVE_PROGRAM_ID,
     METEORA_POOL_PROGRAM_ID, ORCA_WHIRLPOOLS_PROGRAM_ID, PUMP_AAM_PROGRAM_ID,
@@ -1486,37 +1487,65 @@ impl TransactionInfo {
 }
 
 impl TransactionInfo {
-    pub fn display(&self) {
+    pub async fn display(&self) {
+        let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
+        let spl = solana.create_spl();
+        let base_token_info = spl
+            .get_token_info(&self.get_pool_base_token_address().unwrap_or("".to_string()))
+            .await
+            .unwrap_or_default();
+        let quote_token_info = spl
+            .get_token_info(
+                &self
+                    .get_pool_quote_token_address()
+                    .unwrap_or("".to_string()),
+            )
+            .await
+            .unwrap_or_default();
+        println!("=====================================================");
+        println!("Trade Hash: {:?}", self.transaction_hash);
+        println!("Is Swap: {:?}", if self.is_swap() { "Yes" } else { "No" });
+        println!("Trading Direction: {:?}", self.get_direction());
         println!(
-            "
-==================================
-Bond Curve Type
-==================================
-Is Raydium Launchpad: {:?}
-Is Pump: {:?}
-Is Meteora Dynamic Bond Curve: {:?}
-==================================
-Transaction Info
-==================================
-Trading Direction: {:?}
-Base Token Info: {:?} - {:?}
-Quote Token Info: {:?} - {:?}
-Received Token: {:?} - {:?}
-Spent Token: {:?} - {:?}
-            ",
-            self.is_raydium_launchpad_trade(),
-            self.is_pump_bond_curve_trade(),
-            self.is_meteora_dbc_trade(),
-            self.get_direction(),
-            self.get_pool_base_token_address(),
-            self.get_signer_base_token_change_decimal(),
-            self.get_pool_quote_token_address(),
-            self.get_signer_quote_token_change_decimal(),
-            self.get_received_token_address(),
-            self.get_received_token_sol(),
-            self.get_received_token_address(),
-            self.get_spent_token_sol(),
+            "Received Sol Amount: {:?}",
+            self.get_signer_total_sol_received_sol()
         );
+        println!(
+            "Income Sol Amount: {:?}",
+            self.get_signer_net_sol_income_sol()
+        );
+        println!(
+            "Paid Sol Amount: {:?}",
+            self.get_signer_total_sol_paid_sol()
+        );
+        println!(
+            "Expense Sol Amount:  {:?}",
+            self.get_signer_net_sol_expense_sol()
+        );
+        println!("Pool Address: {:?}", self.get_pool_address());
+        println!(
+            "Base Token Address: {:?}",
+            self.get_pool_base_token_address()
+        );
+        println!(
+            "Quote Token Address: {:?}",
+            self.get_pool_quote_token_address()
+        );
+        println!("Base Token Info: {:?}", base_token_info);
+        println!("Quote Token Info: {:?}", quote_token_info);
+        println!(
+            "Base Toeken Amount: {:?}",
+            self.get_signer_base_token_change_decimal()
+        );
+        println!(
+            "Quote Toeken Amount: {:?}",
+            self.get_signer_quote_token_change_decimal()
+        );
+        println!(
+            "Quote Ratio: {:?}",
+            format!("{:.12}", self.get_token_quote_ratio().unwrap_or(0.0))
+        );
+        println!("=====================================================");
     }
 }
 

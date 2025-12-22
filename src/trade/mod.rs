@@ -725,21 +725,7 @@ mod tests {
         let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
         let trade = solana.create_trade();
         let trade_info = trade.get_transaction_display_details("2UpRfA6Z2qh6UZDmtRouCq5Wfe8F4E7f8tHrMawgtFtN6mcpf9k89AaMeqznr2FCRBJYWP9kwCZbi87B1aEKHTFq").await.unwrap();
-        println!("=====================================================");
-        println!("Signature: {:?}", trade_info.transaction_hash);
-        println!(
-            "Is Swap: {:?}",
-            if trade_info.is_swap { "Yes" } else { "No" }
-        );
-        println!("Base Token: {:?}", trade_info.get_pool_base_token_address());
-        println!(
-            "Quote Token: {:?}",
-            trade_info.get_pool_quote_token_address()
-        );
-        println!("Received Token: {:?}", trade_info.get_received_token_sol());
-        println!("Spent Token: {:?}", trade_info.get_spent_token_sol());
-        println!("Quote Ratio: {:?}", trade_info.get_token_quote_ratio());
-        println!("=====================================================");
+        trade_info.display();
         Ok(())
     }
 
@@ -760,7 +746,7 @@ mod tests {
         let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
         let trade = solana.create_trade();
         let t_info = trade.get_transaction_display_details("4q9gPA9zQCRm5UMmdTX6X4N7nTBFe5CEqH8voewStDou7atyBiu9JHbm2K6hSWp7eRVtbV9q5pKGmPxtpsaZyGt1").await.unwrap();
-        t_info.display();
+        t_info.display().await;
         Ok(())
     }
 
@@ -769,25 +755,7 @@ mod tests {
         let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
         let trade = solana.create_trade();
         let t_info = trade.get_transaction_display_details("5TB7cLJ1EMRpLnR1m5XSqq7TbhJM5NHJvLodKT5LFDQYdBFAjmVkyjGKZ6jn1suE37HUfPFURtsy6qHPJ47H9qEV").await.unwrap();
-        println!("{:?}", t_info.get_signer_total_sol_received_sol());
-        println!("{:?}", t_info.get_signer_net_sol_income_sol());
-        println!("{:?}", t_info.get_signer_total_sol_paid_sol());
-        println!("{:?}", t_info.get_signer_net_sol_expense_sol());
-        println!("Pool address: {:?}", t_info.get_pool_address());
-        println!("base token: {:?}", t_info.get_pool_base_token_address());
-        println!("quote token: {:?}", t_info.get_pool_quote_token_address());
-        println!(
-            "base token a: {:?}",
-            t_info.get_signer_base_token_change_decimal()
-        );
-        println!(
-            "quote token: {:?}",
-            t_info.get_signer_quote_token_change_decimal()
-        );
-        println!(
-            "Quote Ratio: {:?}",
-            format!("{:.12}", t_info.get_token_quote_ratio().unwrap_or(0.0))
-        );
+        t_info.display().await;
         Ok(())
     }
 

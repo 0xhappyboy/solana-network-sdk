@@ -144,15 +144,7 @@ mod tests {
                 .get_transaction_display_details(&format!("{:?}", sign))
                 .await
                 .unwrap();
-            println!(
-                "Tx: {:?}, Is Vote Program: {:?}",
-                sign,
-                if (trade_info.is_vote_program()) {
-                    "Yes"
-                } else {
-                    "No"
-                }
-            );
+            trade_info.display();
         }
     }
 
@@ -166,12 +158,11 @@ mod tests {
                 Some(info) => {
                     for sig in info.transaction_signatures {
                         println!("Signature: {:?}", sig);
-                        let t = trade
+                        let trade_info = trade
                             .get_transaction_display_details(&format!("{:?}", sig))
                             .await
                             .unwrap();
-                        println!("Received : {:?}", t.get_received_token_sol());
-                        println!("Spent : {:?}", t.get_spent_token_sol());
+                        trade_info.display();
                     }
                 }
                 None => (),

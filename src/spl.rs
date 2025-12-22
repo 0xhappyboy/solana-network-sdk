@@ -181,6 +181,25 @@ pub struct SplTokenInfo {
     pub program_type: TokenProgramType,
 }
 
+impl Default for SplTokenInfo {
+    fn default() -> Self {
+        Self {
+            mint_address: Default::default(),
+            decimals: Default::default(),
+            supply_raw: Default::default(),
+            supply: Default::default(),
+            mint_authority: Default::default(),
+            freeze_authority: Default::default(),
+            symbol: Default::default(),
+            name: Default::default(),
+            logo_uri: Default::default(),
+            website: Default::default(),
+            description: Default::default(),
+            program_type: TokenProgramType::StandardSplToken,
+        }
+    }
+}
+
 impl SplTokenInfo {
     pub fn get_supply_with_decimals(&self) -> f64 {
         self.supply

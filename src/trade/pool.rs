@@ -169,8 +169,8 @@ impl TransactionInfo {
     /// Get the real quote token address from the transaction
     /// Quote token is one of: SOL, WSOL, USDC, USDT, USD1
     /// For aggregator trades, this returns the final settlement token
-    pub fn get_pool_quote_token_address(&self) -> String {
-        self.get_final_settlement_quote_token()
+    pub fn get_pool_quote_token_address(&self) -> Option<String> {
+        Some(self.get_final_settlement_quote_token())
     }
     
     /// Calculate signer's base token balance change (in token units with decimals)
@@ -186,7 +186,7 @@ impl TransactionInfo {
     /// Calculate signer's quote token balance change (in token units with decimals)
     /// Positive means received quote tokens, negative means spent quote tokens
     pub fn get_signer_quote_token_change_decimal(&self) -> Option<f64> {
-        let quote_token = self.get_pool_quote_token_address();
+        let quote_token = self.get_pool_quote_token_address().unwrap_or("".to_string());
         match quote_token.as_str() {
             SOL | WSOL => {
                 Some(self.get_signer_net_sol_income_sol())
@@ -208,7 +208,7 @@ impl TransactionInfo {
     
     /// Calculate signer's quote token balance change (in lamports/raw units)
     pub fn get_signer_quote_token_change_lamports(&self) -> i64 {
-        let quote_token = self.get_pool_quote_token_address();
+        let quote_token = self.get_pool_quote_token_address().unwrap_or("".to_string());
         match quote_token.as_str() {
             SOL => self.get_signer_net_sol_income_lamports(),
             _ => self.get_signer_token_balance_change_lamports(&quote_token),
@@ -447,7 +447,7 @@ pub struct SwapStep {
 #[derive(Debug, Clone)]
 pub struct TokenInfo {
     pub base_token: Option<String>,
-    pub quote_token: String,
+    pub quote_token: Option<String>,
     pub base_change_lamports: i64,
     pub quote_change_lamports: i64,
     pub base_change_decimal: Option<f64>,

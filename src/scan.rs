@@ -249,21 +249,7 @@ mod tests {
             .unwrap();
         for sign in signs {
             let trade_info = trade.get_transaction_display_details(&sign).await.unwrap();
-            println!("=====================================================");
-            println!("Signature: {:?}", trade_info.transaction_hash);
-            println!(
-                "Is Swap: {:?}",
-                if trade_info.is_swap { "Yes" } else { "No" }
-            );
-            println!("Token: {:?}", trade_info.get_pool_base_token_address());
-            println!(
-                "Quote Token: {:?}",
-                trade_info.get_pool_quote_token_address()
-            );
-            println!("Received Token: {:?}", trade_info.get_received_token_address());
-            println!("Spent Token: {:?}", trade_info.get_spent_token_address());
-            println!("Quote Ratio: {:?}", trade_info.get_token_quote_ratio_string());
-            println!("=====================================================");
+            trade_info.display().await;
         }
         Ok(())
     }
