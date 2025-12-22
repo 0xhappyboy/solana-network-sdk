@@ -704,18 +704,8 @@ mod tests {
             .get_transaction_display_details_batch(signs)
             .await
             .unwrap();
-        println!("Batch Query Results Count: {:?}", trade_infos.len());
         for info in trade_infos {
-            println!(
-                "
-                ==========================================
-                hash: {:?}\n,
-                is swap: {:?}\n,
-                ==========================================
-                ",
-                info.transaction_hash,
-                if info.is_swap() { "Yes" } else { "No" },
-            );
+            info.display().await;
         }
         Ok(())
     }
@@ -725,7 +715,7 @@ mod tests {
         let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
         let trade = solana.create_trade();
         let trade_info = trade.get_transaction_display_details("2UpRfA6Z2qh6UZDmtRouCq5Wfe8F4E7f8tHrMawgtFtN6mcpf9k89AaMeqznr2FCRBJYWP9kwCZbi87B1aEKHTFq").await.unwrap();
-        trade_info.display();
+        trade_info.display().await;
         Ok(())
     }
 
@@ -734,10 +724,7 @@ mod tests {
         let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
         let trade = solana.create_trade();
         let t_info = trade.get_transaction_display_details("2tEx6Y92BtqJV73cBATabdA8TpvHqPrbGHAjMsEHcgzQEYdn8FzxefPWoYXJCVWeuGe4uz5jdH3Vbj7ySK9mfzwM").await.unwrap();
-        println!(
-            "Quote Token Ratio: {}",
-            t_info.get_token_quote_ratio().unwrap()
-        );
+        t_info.display().await;
         Ok(())
     }
 

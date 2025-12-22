@@ -144,7 +144,7 @@ mod tests {
                 .get_transaction_display_details(&format!("{:?}", sign))
                 .await
                 .unwrap();
-            trade_info.display();
+            trade_info.display().await;
         }
     }
 
@@ -157,12 +157,11 @@ mod tests {
             .poll_latest_block(async |block_info| match block_info {
                 Some(info) => {
                     for sig in info.transaction_signatures {
-                        println!("Signature: {:?}", sig);
                         let trade_info = trade
                             .get_transaction_display_details(&format!("{:?}", sig))
                             .await
                             .unwrap();
-                        trade_info.display();
+                        trade_info.display().await;
                     }
                 }
                 None => (),

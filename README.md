@@ -37,6 +37,36 @@ async fn main() -> Result<(), String> {
 
 ```
 
+## Batch scan all signed transactions at a specified address.
+
+```rust
+#[cfg(test)]
+mod tests {
+    use crate::Solana;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn test_get_all_signatures_by_address_and_batch_find_transaction() -> Result<(), ()> {
+        let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
+        let scan = Arc::new(solana.create_scan());
+        scan.fetch_all_transactions_by_address(
+            "CzVqatmaK6GfyEWZUcWromDvpq3MFxqSrUweZgbjHngh",
+            Some(100),
+            Some(100),
+            Some(10),
+            async |trades| {
+                for trade in trades {
+                    trade.display().await;
+                }
+            },
+        )
+        .await;
+        Ok(())
+    }
+}
+```
+
 ## Batch query transaction information
 
 ```rust

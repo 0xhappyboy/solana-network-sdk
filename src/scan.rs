@@ -2,10 +2,13 @@ use solana_client::{
     nonblocking::rpc_client::RpcClient, rpc_client::GetConfirmedSignaturesForAddress2Config,
 };
 use solana_sdk::{pubkey::Pubkey, signature::Signature};
+use std::collections::VecDeque;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+use tokio::sync::Mutex;
+use tokio::task::JoinHandle;
 
 /// Scanner for retrieving transaction signatures from Solana blockchain
 /// Provides methods to fetch historical and recent transaction signatures for given addresses
@@ -230,6 +233,158 @@ impl Scan {
             signatures.iter().map(|sig| sig.signature.clone()).collect();
         Ok(signature_strings)
     }
+
+    /// Fetches all transaction information for the specified address and calls back in batches
+    ///
+    /// # Parameters
+    /// * `address` - Solana address (base58 encoded)
+    /// * `callback` - Callback function that receives batches of transaction information
+    ///
+    pub async fn fetch_all_transactions_by_address<F, Fut>(
+        self: Arc<Self>,
+        address: &str,
+        interval_time: Option<u64>,
+        signs_batch_size: Option<u64>,
+        find_trade_batch_size: Option<u64>,
+        callback: F,
+    ) -> Result<(), String>
+    where
+        F: Fn(Vec<crate::trade::info::TransactionInfo>) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = ()> + Send,
+    {
+        let trade_batch_size: u64 = find_trade_batch_size.unwrap_or(50);
+        let sleep_duration = interval_time.unwrap_or(200);
+        let batch_limit = signs_batch_size.unwrap_or(1000);
+        let signatures_queue: Arc<Mutex<VecDeque<String>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let trade = crate::trade::Trade::new(self.client.clone());
+        let trade_arc = Arc::new(trade);
+        let fetch_completed = Arc::new(AtomicBool::new(false));
+        let signatures_queue_clone = signatures_queue.clone();
+        let trade_clone = trade_arc.clone();
+        let callback_arc = Arc::new(callback);
+        let fetch_completed_clone = fetch_completed.clone();
+        let self_clone = self.clone();
+        let fetch_handle = tokio::spawn({
+            let address = address.to_string();
+            let queue_clone = signatures_queue_clone.clone();
+            let fetch_completed = fetch_completed_clone.clone();
+            let scan = self_clone.clone();
+            let sleep_duration = sleep_duration;
+            async move {
+                let pubkey = match Pubkey::from_str(&address) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        fetch_completed.store(true, Ordering::Relaxed);
+                        return;
+                    }
+                };
+                let mut before: Option<Signature> = None;
+                let mut history_completed = false;
+                loop {
+                    let config = GetConfirmedSignaturesForAddress2Config {
+                        before,
+                        until: None,
+                        limit: Some(batch_limit.try_into().unwrap()),
+                        commitment: None,
+                    };
+                    let signatures = match scan
+                        .client
+                        .get_signatures_for_address_with_config(&pubkey, config)
+                        .await
+                    {
+                        Ok(sigs) => sigs,
+                        Err(e) => {
+                            if e.to_string().contains("rate limit") || e.to_string().contains("429")
+                            {
+                                tokio::time::sleep(Duration::from_millis(2000)).await;
+                            } else {
+                                eprintln!("RPC error: {:?}", e);
+                                tokio::time::sleep(Duration::from_millis(sleep_duration)).await;
+                            }
+                            continue;
+                        }
+                    };
+                    if signatures.is_empty() {
+                        if !history_completed {
+                            history_completed = true;
+                            before = None;
+                            fetch_completed.store(true, Ordering::Relaxed);
+                        }
+                        tokio::time::sleep(Duration::from_millis(sleep_duration)).await;
+                        continue;
+                    }
+                    let mut queue_lock = queue_clone.lock().await;
+                    for sig in &signatures {
+                        queue_lock.push_back(sig.signature.clone());
+                    }
+                    if let Some(last_sig) = signatures.last() {
+                        before = match Signature::from_str(&last_sig.signature) {
+                            Ok(sig) => Some(sig),
+                            Err(_) => continue,
+                        };
+                    }
+                    tokio::time::sleep(Duration::from_millis(sleep_duration)).await;
+                }
+            }
+        });
+        let process_handle = tokio::spawn({
+            let signatures_queue = signatures_queue.clone();
+            let trade = trade_clone.clone();
+            let callback = callback_arc.clone();
+            let fetch_completed = fetch_completed.clone();
+            async move {
+                loop {
+                    let batch_signatures = {
+                        let mut queue_lock = signatures_queue.lock().await;
+                        let mut batch = Vec::new();
+                        while batch.len() < trade_batch_size.try_into().unwrap()
+                            && !queue_lock.is_empty()
+                        {
+                            if let Some(sig) = queue_lock.pop_front() {
+                                batch.push(sig);
+                            } else {
+                                break;
+                            }
+                        }
+                        batch
+                    };
+                    if !batch_signatures.is_empty() {
+                        let sig_slices: Vec<&str> =
+                            batch_signatures.iter().map(|s| s.as_str()).collect();
+                        match trade
+                            .get_transaction_display_details_batch(sig_slices)
+                            .await
+                        {
+                            Ok(transaction_infos) => {
+                                if !transaction_infos.is_empty() {
+                                    callback(transaction_infos).await;
+                                }
+                            }
+                            Err(e) => {
+                                let mut queue_lock = signatures_queue.lock().await;
+                                for sig in batch_signatures {
+                                    queue_lock.push_front(sig);
+                                }
+                            }
+                        }
+                    } else if fetch_completed.load(Ordering::Relaxed) {
+                        let queue_empty = {
+                            let queue_lock = signatures_queue.lock().await;
+                            queue_lock.is_empty()
+                        };
+
+                        if queue_empty {
+                            break;
+                        }
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                }
+            }
+        });
+        let _ = tokio::try_join!(fetch_handle, process_handle)
+            .map_err(|e| format!("Thread Execution Error: {:?}", e))?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -255,17 +410,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_all_signatures_by_address() -> Result<(), ()> {
+    async fn test_get_all_signatures_by_address_and_batch_find_transaction() -> Result<(), ()> {
         let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
         let scan = Arc::new(solana.create_scan());
-        let test_address = "vines1vzrYbzLMRdu58ou5XTby4qAqVRLmqo36NKPTg";
+        scan.fetch_all_transactions_by_address(
+            "CzVqatmaK6GfyEWZUcWromDvpq3MFxqSrUweZgbjHngh",
+            Some(100),
+            Some(100),
+            Some(10),
+            async |trades| {
+                for trade in trades {
+                    trade.display().await;
+                }
+            },
+        )
+        .await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_all_signatures_by_address_stop() -> Result<(), ()> {
+        let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
+        let scan = Arc::new(solana.create_scan());
+        let test_address = "CzVqatmaK6GfyEWZUcWromDvpq3MFxqSrUweZgbjHngh";
         let scan_1 = scan.clone();
         let handle1 = tokio::spawn(async move {
             let result = scan_1
                 .poll_all_signatures_by_address(
                     test_address,
                     Some(100),
-                    Some(10),
+                    Some(100),
                     |sig| async move {
                         println!("Signature: {:?}", sig);
                     },
