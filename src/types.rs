@@ -19,6 +19,7 @@ pub enum UnifiedError<T> {
 pub enum Direction {
     Buy,
     Sell,
+    Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

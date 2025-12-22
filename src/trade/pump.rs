@@ -16,6 +16,7 @@ impl<'a> PumpBondCurveTransactionInfo<'a> {
     pub fn get_token_quote_ratio(&self) -> Option<f64> {
         let direction = self.get_pump_direction()?;
         match direction {
+            Direction::Unknown => {}
             Direction::Buy => {
                 if let Some((spent_token, spent_amount)) = self.get_pump_spent_token() {
                     if QUOTES.contains(&spent_token.as_str()) {
@@ -374,6 +375,7 @@ impl<'a> PumpBondCurveTransactionInfo<'a> {
     pub fn get_pump_token_price_sol(&self) -> Option<f64> {
         let direction = self.get_pump_direction()?;
         match direction {
+            Direction::Unknown => {}
             Direction::Buy => {
                 if let Some((spent_token, spent_amount_sol)) = self.get_pump_spent_token_sol() {
                     if spent_token == SOL || spent_token == USDC || spent_token == USDT {
@@ -413,6 +415,7 @@ impl<'a> PumpBondCurveTransactionInfo<'a> {
     pub fn get_pump_total_value_sol(&self) -> Option<f64> {
         let direction = self.get_pump_direction()?;
         match direction {
+            Direction::Unknown => {}
             Direction::Buy => {
                 if let Some((spent_token, spent_amount_sol)) = self.get_pump_spent_token_sol() {
                     if spent_token == SOL || spent_token == USDC || spent_token == USDT {
@@ -436,6 +439,7 @@ impl<'a> PumpBondCurveTransactionInfo<'a> {
     pub fn get_pump_meme_token_amount_sol(&self) -> Option<(String, f64)> {
         let direction = self.get_pump_direction()?;
         match direction {
+            Direction::Unknown => {}
             Direction::Buy => {
                 if let Some((received_token, received_amount)) = self.get_pump_received_token_sol()
                 {
@@ -458,6 +462,7 @@ impl<'a> PumpBondCurveTransactionInfo<'a> {
     pub fn get_pump_sol_amount_sol(&self) -> Option<f64> {
         let direction = self.get_pump_direction()?;
         match direction {
+            Direction::Unknown => {}
             Direction::Buy => {
                 if let Some((spent_token, spent_amount_sol)) = self.get_pump_spent_token_sol() {
                     if spent_token == SOL {

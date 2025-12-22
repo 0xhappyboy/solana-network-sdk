@@ -1,23 +1,15 @@
 use std::vec;
-use std::{str::FromStr, sync::Arc};
 
 use base64::Engine;
 use base64::engine::general_purpose;
-use futures::future::join_all;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use solana_client::{
-    nonblocking::rpc_client::RpcClient, rpc_client::GetConfirmedSignaturesForAddress2Config,
-    rpc_config::RpcTransactionConfig, rpc_response::RpcConfirmedTransactionStatusWithSignature,
-};
 use solana_sdk::native_token::LAMPORTS_PER_SOL;
-use solana_sdk::signature::Signature;
 use solana_sdk::transaction::TransactionVersion;
-use solana_sdk::{message::Message, pubkey::Pubkey};
 use solana_transaction_status::option_serializer::OptionSerializer;
 use solana_transaction_status::{
     EncodedConfirmedTransactionWithStatusMeta, EncodedTransaction, UiMessage, UiParsedInstruction,
-    UiTransactionEncoding, UiTransactionTokenBalance,
+    UiTransactionTokenBalance,
 };
 
 use crate::global::{
@@ -28,7 +20,7 @@ use crate::global::{
 };
 use crate::trade::Trade;
 use crate::trade::pump::PumpBondCurveTransactionInfo;
-use crate::types::{DexProgramType, Direction, TransactionType, UnifiedError, UnifiedResult};
+use crate::types::{DexProgramType, Direction, TransactionType};
 
 /// a more readable transaction information structure.
 #[derive(Debug, Clone)]
@@ -71,8 +63,7 @@ pub struct TransactionInfo {
     pub transaction_type: Option<TransactionType>,
     pub program_id: String,
     pub instructions_count: u64,
-    pub inner_instructions_count: u64, // Number of inner instructions
-    pub version: u8,                   // Transaction version
+    pub version: u8, // Transaction version
     // Resource Consumption
     pub compute_units_consumed: Option<u64>, // Compute units consumed
     pub compute_unit_price: Option<u64>,     // Compute unit price
@@ -80,8 +71,6 @@ pub struct TransactionInfo {
     pub log_index: u64,
     pub data: Option<String>,
     pub logs: Vec<String>,
-    pub instructions: Vec<InstructionInfo>, // Instruction details
-    pub inner_instructions: Vec<InnerInstructionInfo>, // Inner instructions
     // Token Related
     pub token_mint: Option<String>,
     pub token_amount: Option<String>,
@@ -124,6 +113,35 @@ pub struct TransactionInfo {
     pub updated_at: u64, // Record update timestamp
     pub source: String,  // Data source
     pub confidence: f64, // Data confidence level 0.0-1.0
+    // raw data
+    pub raw_account_keys: Vec<String>, // raw account_keys
+    pub raw_pre_balances: Vec<u64>,    // raw pre_balances
+    pub raw_post_balances: Vec<u64>,   // raw post_balances
+    pub raw_pre_token_balances: Vec<RawTokenBalance>, // raw pre_token_balances
+    pub raw_post_token_balances: Vec<RawTokenBalance>, // raw post_token_balances
+    pub raw_log_messages: Vec<String>, // raw log_messages
+    // instruction
+    pub instructions: Vec<InstructionInfo>, // Instruction details
+    pub inner_instructions: Vec<InnerInstructionInfo>, // Inner instructions
+    pub inner_instructions_count: u64,      // Number of inner instructions
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RawTokenBalance {
+    pub account_index: u8,
+    pub mint: String,
+    pub ui_token_amount: UiTokenAmount,
+    pub owner: Option<String>,
+    pub program_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RawInstruction {
+    pub program_id_index: Option<u8>,
+    pub program_id: Option<String>,
+    pub accounts: Vec<u8>,
+    pub data: String,
+    pub stack_height: Option<u32>,
 }
 
 impl TransactionInfo {
@@ -906,6 +924,7 @@ impl TransactionInfo {
                     }
                 }
             }
+            Direction::Unknown => {}
         }
         if let Some(left_amount_sol) = self.get_pool_left_amount_sol() {
             if let Some(right_amount_sol) = self.get_pool_right_amount_sol() {
@@ -1171,6 +1190,10 @@ impl TransactionInfo {
         info.block_number = tx.slot;
         info.slot = tx.slot;
         info.block_time = tx.block_time;
+
+        // 解析原始数组数据
+        Self::parse_raw_arrays(&mut info, tx);
+
         if let Some(meta) = &tx.transaction.meta {
             info.status = if meta.err.is_none() {
                 "success".to_string()
@@ -1201,6 +1224,98 @@ impl TransactionInfo {
         info.source = "rpc".to_string();
         info.confidence = 1.0;
         info
+    }
+
+    fn parse_raw_arrays(
+        info: &mut TransactionInfo,
+        tx: &EncodedConfirmedTransactionWithStatusMeta,
+    ) {
+        match &tx.transaction.transaction {
+            EncodedTransaction::Json(json_tx) => match &json_tx.message {
+                UiMessage::Parsed(parsed_msg) => {
+                    info.raw_account_keys = parsed_msg
+                        .account_keys
+                        .iter()
+                        .map(|acc| acc.pubkey.clone())
+                        .collect();
+                }
+                UiMessage::Raw(raw_msg) => {
+                    info.raw_account_keys = raw_msg
+                        .account_keys
+                        .iter()
+                        .map(|pk| pk.to_string())
+                        .collect();
+                }
+            },
+            _ => {
+                info.raw_account_keys = Vec::new();
+            }
+        }
+        if let Some(meta) = &tx.transaction.meta {
+            match (&meta.pre_balances, &meta.post_balances) {
+                (pre, post) => {
+                    info.raw_pre_balances = pre.clone();
+                    info.raw_post_balances = post.clone();
+                }
+                _ => {
+                    info.raw_pre_balances = Vec::new();
+                    info.raw_post_balances = Vec::new();
+                }
+            }
+            match (&meta.pre_token_balances, &meta.post_token_balances) {
+                (OptionSerializer::Some(pre_tokens), OptionSerializer::Some(post_tokens)) => {
+                    info.raw_pre_token_balances = pre_tokens
+                        .iter()
+                        .map(|balance| RawTokenBalance {
+                            account_index: balance.account_index,
+                            mint: balance.mint.clone(),
+                            ui_token_amount: UiTokenAmount {
+                                ui_amount: balance.ui_token_amount.ui_amount,
+                                decimals: balance.ui_token_amount.decimals,
+                                amount: balance.ui_token_amount.amount.clone(),
+                                ui_amount_string: Some(
+                                    balance.ui_token_amount.ui_amount_string.clone(),
+                                ),
+                            },
+                            owner: balance.owner.clone().into(),
+                            program_id: balance.program_id.clone().into(),
+                        })
+                        .collect();
+
+                    info.raw_post_token_balances = post_tokens
+                        .iter()
+                        .map(|balance| RawTokenBalance {
+                            account_index: balance.account_index,
+                            mint: balance.mint.clone(),
+                            ui_token_amount: UiTokenAmount {
+                                ui_amount: balance.ui_token_amount.ui_amount,
+                                decimals: balance.ui_token_amount.decimals,
+                                amount: balance.ui_token_amount.amount.clone(),
+                                ui_amount_string: Some(
+                                    balance.ui_token_amount.ui_amount_string.clone(),
+                                ),
+                            },
+                            owner: balance.owner.clone().into(),
+                            program_id: balance.program_id.clone().into(),
+                        })
+                        .collect();
+                }
+                _ => {
+                    info.raw_pre_token_balances = Vec::new();
+                    info.raw_post_token_balances = Vec::new();
+                }
+            }
+
+            // 解析 log_messages
+            match &meta.log_messages {
+                OptionSerializer::Some(logs) => {
+                    info.raw_log_messages = logs.clone();
+                }
+                _ => {
+                    info.raw_log_messages = Vec::new();
+                }
+            }
+        }
     }
 
     fn parse_transaction_content(
@@ -2061,18 +2176,6 @@ impl TransactionInfo {
         self.value_sol
     }
 
-    /// get trade direction
-    pub fn get_direction(&self) -> Direction {
-        if (self.get_spent_token_sol().unwrap().0 == USDC
-            || self.get_spent_token_sol().unwrap().0 == USDT
-            || self.get_spent_token_sol().unwrap().0 == SOL)
-        {
-            Direction::Buy
-        } else {
-            Direction::Sell
-        }
-    }
-
     pub fn is_swap(&self) -> bool {
         self.is_swap
     }
@@ -2160,6 +2263,13 @@ impl Default for TransactionInfo {
             updated_at: 0,
             source: "rpc".to_string(),
             confidence: 1.0,
+            // raw data
+            raw_account_keys: Vec::new(),
+            raw_pre_balances: Vec::new(),
+            raw_post_balances: Vec::new(),
+            raw_pre_token_balances: Vec::new(),
+            raw_post_token_balances: Vec::new(),
+            raw_log_messages: Vec::new(),
         }
     }
 }

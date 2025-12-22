@@ -1,5 +1,7 @@
 pub mod info;
+pub mod pool;
 pub mod pump;
+pub mod signer_sol;
 use std::vec;
 use std::{str::FromStr, sync::Arc};
 
@@ -784,8 +786,22 @@ mod tests {
     async fn test_is_pump_trade() -> Result<(), ()> {
         let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
         let trade = solana.create_trade();
-        let t_info = trade.get_transaction_display_details("4Zwt4WYYTFehY8ZNdKD2z2tfQKDLh83dcT6NhAkXqvp9oayDabSX2qSZBi4RVjzSiHDvUSRoaoCsg6iTdg55bat5").await.unwrap();
-        t_info.display();
+        let t_info = trade.get_transaction_display_details("5DNgaLHGjN5CdwBDnUeLy8MHcdV43he8Jfhmj6z7EpjZupsMtkjAzBL6jYHNyUmN1qLtbcV9aMAwtVEfeepcnLzU").await.unwrap();
+        println!("{:?}", t_info.get_signer_total_sol_received_sol());
+        println!("{:?}", t_info.get_signer_net_sol_income_sol());
+        println!("{:?}", t_info.get_signer_total_sol_paid_sol());
+        println!("{:?}", t_info.get_signer_net_sol_expense_sol());
+        println!("Pool address: {:?}", t_info.get_pool_address());
+        println!("base token: {:?}", t_info.get_pool_base_token_address());
+        println!("quote token: {:?}", t_info.get_pool_quote_token_address());
+        println!(
+            "base token a: {:?}",
+            t_info.get_signer_base_token_change_decimal()
+        );
+        println!(
+            "quote token: {:?}",
+            t_info.get_signer_quote_token_change_decimal()
+        );
         Ok(())
     }
 
