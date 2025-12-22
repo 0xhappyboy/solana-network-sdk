@@ -259,7 +259,9 @@ mod tests {
                 Some(10),  // 10 transactions per batch
                 async |transactions| {
                     for tx in &transactions {
-                        tx.display().await;
+                        if (tx.is_swap()) {
+                            tx.display().await;
+                        }
                     }
                 },
             )

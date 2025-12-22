@@ -421,7 +421,9 @@ mod tests {
                 Some(10),
                 async |trades| {
                     for trade in trades {
-                        trade.display().await;
+                        if (trade.is_swap()) {
+                            trade.display().await;
+                        }
                     }
                 },
             )
