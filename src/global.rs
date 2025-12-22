@@ -14,6 +14,7 @@ pub const USD_1: &'static str = "USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB";
 pub const RAY: &'static str = "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R";
 pub const QUOTES: [&str; 5] = [SOL, WSOL, USDT, USDC, USD_1];
 pub const SPL_TOKEN_PROGRAM_V1: &'static str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+pub const SPL_TOKEN_PROGRAM_2022: &'static str = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
 // vote program id
 pub const VOTE_PROGRAM_ID: &str = "Vote111111111111111111111111111111111111111";
 
