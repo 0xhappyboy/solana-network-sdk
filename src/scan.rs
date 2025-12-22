@@ -260,9 +260,9 @@ mod tests {
                 "Quote Token: {:?}",
                 trade_info.get_pool_quote_token_address()
             );
-            println!("Received Token: {:?}", trade_info.get_received_token_sol());
-            println!("Spent Token: {:?}", trade_info.get_spent_token_sol());
-            println!("Quote Ratio: {:?}", trade_info.get_token_quote_ratio());
+            println!("Received Token: {:?}", trade_info.get_received_token_address());
+            println!("Spent Token: {:?}", trade_info.get_spent_token_address());
+            println!("Quote Ratio: {:?}", trade_info.get_token_quote_ratio_string());
             println!("=====================================================");
         }
         Ok(())
