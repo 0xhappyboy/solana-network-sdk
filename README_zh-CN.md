@@ -37,6 +37,35 @@ async fn main() -> Result<(), String> {
 
 ```
 
+## 批量扫描区块中所有交易.
+
+```rust
+
+#[cfg(test)]
+mod tests {
+    use crate::Solana;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_fetch_transactions_from_latest_blocks() {
+        let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
+        let block_service = Arc::new(Block::new(solana.client_arc()));
+        let _ = block_service
+            .fetch_transactions_from_latest_blocks(
+                Some(500), // the block is polled every 500ms.
+                Some(10),  // 10 transactions per batch
+                async |transactions| {
+                    for tx in &transactions {
+                        tx.display().await;
+                    }
+                },
+            )
+            .await;
+    }
+}
+```
+
 ## 批量扫描指定地址中的所有签名交易.
 
 ```rust
