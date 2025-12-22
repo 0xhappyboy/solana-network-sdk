@@ -14,7 +14,6 @@ impl TransactionInfo {
                     .position(|addr| addr == &self.fee_payer)
             })
             .unwrap_or(0);
-
         if signer_index >= self.raw_pre_balances.len()
             || signer_index >= self.raw_post_balances.len()
         {

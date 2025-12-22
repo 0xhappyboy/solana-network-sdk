@@ -1,8 +1,5 @@
 use bs58;
-use solana_sdk::{
-    signature::{Signature, Signer},
-    signer::keypair::Keypair,
-};
+use solana_sdk::{signature::Signer, signer::keypair::Keypair};
 
 use crate::tool::wallet::private_key_base58_to_bytes;
 

@@ -1,7 +1,5 @@
 use std::vec;
 
-use base64::Engine;
-use base64::engine::general_purpose;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use solana_sdk::native_token::LAMPORTS_PER_SOL;

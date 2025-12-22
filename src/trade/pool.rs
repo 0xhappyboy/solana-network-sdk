@@ -185,7 +185,7 @@ impl TransactionInfo {
     
     /// Calculate signer's quote token balance change (in token units with decimals)
     /// Positive means received quote tokens, negative means spent quote tokens
-      pub fn get_signer_quote_token_change_decimal(&self) -> Option<f64> {
+    pub fn get_signer_quote_token_change_decimal(&self) -> Option<f64> {
         let quote_token = self.get_pool_quote_token_address();
         match quote_token.as_str() {
             SOL | WSOL => {
@@ -405,24 +405,6 @@ impl TransactionInfo {
     pub fn get_token_quote_ratio_string(&self) -> Option<String> {
         self.get_token_quote_ratio()
             .map(|price| format!("{:.12}", price).trim_end_matches('0').trim_end_matches('.').to_string())
-    }
-
-    /// Get price ratio from aggregator swap path
-    fn get_ratio_from_aggregator_path(&self) -> Option<f64> {
-        let path = self.get_aggregator_path_info();
-        if path.is_empty() {
-            return None;
-        }
-        let mut total_input = 0.0;
-        let mut total_output = 0.0;
-        for step in &path {
-            total_input += step.input_amount;
-            total_output += step.output_amount;
-        }
-        if total_input > 0.0 && total_output > 0.0 {
-            return Some(total_output / total_input);
-        }
-        None
     }
 
     /// Get the token that the signer actually received (with amount in lamports)

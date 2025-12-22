@@ -13,7 +13,7 @@ use solana_sdk::{message::Message, pubkey::Pubkey};
 use solana_transaction_status::{EncodedConfirmedTransactionWithStatusMeta, UiTransactionEncoding};
 
 use crate::trade::info::TransactionInfo;
-use crate::types::{DexProgramType, Direction, TransactionType, UnifiedError, UnifiedResult};
+use crate::types::{UnifiedError, UnifiedResult};
 
 pub struct Trade {
     client: Arc<RpcClient>,
