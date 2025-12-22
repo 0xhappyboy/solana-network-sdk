@@ -413,18 +413,19 @@ mod tests {
     async fn test_get_all_signatures_by_address_and_batch_find_transaction() -> Result<(), ()> {
         let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
         let scan = Arc::new(solana.create_scan());
-        scan.fetch_all_transactions_by_address(
-            "CzVqatmaK6GfyEWZUcWromDvpq3MFxqSrUweZgbjHngh",
-            Some(100),
-            Some(100),
-            Some(10),
-            async |trades| {
-                for trade in trades {
-                    trade.display().await;
-                }
-            },
-        )
-        .await;
+        let _ = scan
+            .fetch_all_transactions_by_address(
+                "CzVqatmaK6GfyEWZUcWromDvpq3MFxqSrUweZgbjHngh",
+                Some(100),
+                Some(100),
+                Some(10),
+                async |trades| {
+                    for trade in trades {
+                        trade.display().await;
+                    }
+                },
+            )
+            .await;
         Ok(())
     }
 
