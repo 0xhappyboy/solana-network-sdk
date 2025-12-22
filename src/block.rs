@@ -170,11 +170,8 @@ mod tests {
                             .get_transaction_display_details(&format!("{:?}", sig))
                             .await
                             .unwrap();
-                        let pump_t = t.get_pump_bond_curve_transaction_info();
                         println!("Received : {:?}", t.get_received_token_sol());
                         println!("Spent : {:?}", t.get_spent_token_sol());
-                        println!("Pump Received : {:?}", pump_t.get_pump_received_token_sol());
-                        println!("Pump Spent : {:?}", pump_t.get_pump_spent_token_sol());
                     }
                 }
                 None => (),

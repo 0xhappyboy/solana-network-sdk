@@ -1,37 +1,18 @@
 pub mod info;
 pub mod pool;
-pub mod pump;
 pub mod signer_sol;
-use std::vec;
 use std::{str::FromStr, sync::Arc};
 
-use base64::Engine;
-use base64::engine::general_purpose;
 use futures::future::join_all;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use solana_client::{
     nonblocking::rpc_client::RpcClient, rpc_client::GetConfirmedSignaturesForAddress2Config,
     rpc_config::RpcTransactionConfig, rpc_response::RpcConfirmedTransactionStatusWithSignature,
 };
-use solana_sdk::native_token::LAMPORTS_PER_SOL;
 use solana_sdk::signature::Signature;
-use solana_sdk::transaction::TransactionVersion;
 use solana_sdk::{message::Message, pubkey::Pubkey};
-use solana_transaction_status::option_serializer::OptionSerializer;
-use solana_transaction_status::{
-    EncodedConfirmedTransactionWithStatusMeta, EncodedTransaction, UiMessage, UiParsedInstruction,
-    UiTransactionEncoding, UiTransactionTokenBalance,
-};
+use solana_transaction_status::{EncodedConfirmedTransactionWithStatusMeta, UiTransactionEncoding};
 
-use crate::global::{
-    METEORA_DAMM_V2_PROGRAM_ID, METEORA_DLMM_V2_PROGRAM_ID, METEORA_POOL_PROGRAM_ID,
-    ORCA_WHIRLPOOLS_PROGRAM_ID, PUMP_AAM_PROGRAM_ID, PUMP_BOND_CURVE_PROGRAM_ID,
-    RAYDIUM_CLMM_POOL_PROGRAM_ID, RAYDIUM_CPMM_POOL_PROGRAM_ID, RAYDIUM_V4_POOL_PROGRAM_ID, SOL,
-    USDC, USDT,
-};
 use crate::trade::info::TransactionInfo;
-use crate::trade::pump::PumpBondCurveTransactionInfo;
 use crate::types::{DexProgramType, Direction, TransactionType, UnifiedError, UnifiedResult};
 
 pub struct Trade {
@@ -730,12 +711,10 @@ mod tests {
                 ==========================================
                 hash: {:?}\n,
                 is swap: {:?}\n,
-                is pump transcation: {:?},
                 ==========================================
                 ",
                 info.transaction_hash,
                 if info.is_swap() { "Yes" } else { "No" },
-                if info.is_pump() { "Yes" } else { "No" }
             );
         }
         Ok(())
@@ -752,8 +731,11 @@ mod tests {
             "Is Swap: {:?}",
             if trade_info.is_swap { "Yes" } else { "No" }
         );
-        println!("Token: {:?}", trade_info.get_pool_left_address());
-        println!("Quote Token: {:?}", trade_info.get_pool_right_address());
+        println!("Base Token: {:?}", trade_info.get_pool_base_token_address());
+        println!(
+            "Quote Token: {:?}",
+            trade_info.get_pool_quote_token_address()
+        );
         println!("Received Token: {:?}", trade_info.get_received_token_sol());
         println!("Spent Token: {:?}", trade_info.get_spent_token_sol());
         println!("Quote Ratio: {:?}", trade_info.get_token_quote_ratio());
@@ -786,7 +768,7 @@ mod tests {
     async fn test_is_pump_trade() -> Result<(), ()> {
         let solana = Solana::new(crate::types::Mode::MAIN).unwrap();
         let trade = solana.create_trade();
-        let t_info = trade.get_transaction_display_details("5DNgaLHGjN5CdwBDnUeLy8MHcdV43he8Jfhmj6z7EpjZupsMtkjAzBL6jYHNyUmN1qLtbcV9aMAwtVEfeepcnLzU").await.unwrap();
+        let t_info = trade.get_transaction_display_details("5TB7cLJ1EMRpLnR1m5XSqq7TbhJM5NHJvLodKT5LFDQYdBFAjmVkyjGKZ6jn1suE37HUfPFURtsy6qHPJ47H9qEV").await.unwrap();
         println!("{:?}", t_info.get_signer_total_sol_received_sol());
         println!("{:?}", t_info.get_signer_net_sol_income_sol());
         println!("{:?}", t_info.get_signer_total_sol_paid_sol());
@@ -801,6 +783,10 @@ mod tests {
         println!(
             "quote token: {:?}",
             t_info.get_signer_quote_token_change_decimal()
+        );
+        println!(
+            "Quote Ratio: {:?}",
+            t_info.get_token_quote_ratio()
         );
         Ok(())
     }

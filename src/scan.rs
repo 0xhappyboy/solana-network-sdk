@@ -255,8 +255,11 @@ mod tests {
                 "Is Swap: {:?}",
                 if trade_info.is_swap { "Yes" } else { "No" }
             );
-            println!("Token: {:?}", trade_info.get_pool_left_address());
-            println!("Quote Token: {:?}", trade_info.get_pool_right_address());
+            println!("Token: {:?}", trade_info.get_pool_base_token_address());
+            println!(
+                "Quote Token: {:?}",
+                trade_info.get_pool_quote_token_address()
+            );
             println!("Received Token: {:?}", trade_info.get_received_token_sol());
             println!("Spent Token: {:?}", trade_info.get_spent_token_sol());
             println!("Quote Ratio: {:?}", trade_info.get_token_quote_ratio());
