@@ -293,22 +293,6 @@ impl TransactionInfo {
         }
     }
     
-    /// Get trade price (quote token per base token)
-    pub fn get_trade_price(&self) -> Option<f64> {
-        if let (Some(base_change), Some(quote_change)) = (
-            self.get_signer_base_token_change_decimal(),
-            self.get_signer_quote_token_change_decimal()
-        ) {
-            if base_change.abs() > 0.0 {
-                Some(quote_change.abs() / base_change.abs())
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
-    
     /// Get aggregator swap path information
     pub fn get_aggregator_path_info(&self) -> Vec<SwapStep> {
         let mut steps = Vec::new();
@@ -366,7 +350,7 @@ impl TransactionInfo {
             base_change_decimal: self.get_signer_base_token_change_decimal(),
             quote_change_decimal: self.get_signer_quote_token_change_decimal(),
             direction: self.get_direction(),
-            price: self.get_trade_price(),
+            price: self.get_token_quote_ratio(),
             aggregator_path: self.get_aggregator_path_info(),
         }
     }
@@ -402,50 +386,27 @@ impl TransactionInfo {
         None
     }
 
-       /// Calculate the token quote ratio (price) using base token and quote token changes
+    /// Calculate the token quote ratio (price): quote token amount per base token unit
+    /// Returns the price in quote tokens per 1 base token
+    /// Formula: price = abs(quote_change) / abs(base_change)
     pub fn get_token_quote_ratio(&self) -> Option<f64> {
-        if let Some(price) = self.get_trade_price() {
-            return Some(price);
+        let base_change = self.get_signer_base_token_change_decimal()?;
+        let quote_change = self.get_signer_quote_token_change_decimal()?;
+        let base_abs = base_change.abs();
+        let quote_abs = quote_change.abs();
+        if base_abs <= 0.0 || quote_abs <= 0.0 {
+            return None;
         }
-        if let (Some(base_change), Some(quote_change)) = (
-            self.get_signer_base_token_change_decimal(),
-            self.get_signer_quote_token_change_decimal()
-        ) {
-            let base_abs = base_change.abs();
-            let quote_abs = quote_change.abs();
-            if base_abs > 0.0 && quote_abs > 0.0 {
-                let direction = self.get_direction();
-                match direction {
-                    Direction::Buy => {
-                        if base_change > 0.0 && quote_change < 0.0 {
-                            return Some(quote_abs / base_abs);
-                        }
-                    }
-                    Direction::Sell => {
-                        if base_change < 0.0 && quote_change > 0.0 {
-                            return Some(quote_abs / base_abs);
-                        }
-                    }
-                    Direction::Unknown => {
-                        // Unknown direction, try to infer from token types
-                        if let Some(base_token) = self.get_pool_base_token_address() {
-                            if let Some(quote_token) = Some(self.get_pool_quote_token_address()) {
-                                // Use absolute values for unknown direction
-                                return Some(quote_abs / base_abs);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if !self.get_aggregator_path_info().is_empty() {
-            if let Some(ratio) = self.get_ratio_from_aggregator_path() {
-                return Some(ratio);
-            }
-        }
-        None
+        let price = quote_abs / base_abs;
+        Some(price)
     }
     
+    /// Get formatted price as string (for display purposes)
+    pub fn get_token_quote_ratio_string(&self) -> Option<String> {
+        self.get_token_quote_ratio()
+            .map(|price| format!("{:.12}", price).trim_end_matches('0').trim_end_matches('.').to_string())
+    }
+
     /// Get price ratio from aggregator swap path
     fn get_ratio_from_aggregator_path(&self) -> Option<f64> {
         let path = self.get_aggregator_path_info();
@@ -488,12 +449,6 @@ impl TransactionInfo {
     pub fn get_spent_token_address(&self) -> Option<String> {
         self.get_spent_token_sol()
             .map(|(token_address, _)| token_address)
-    }
-    
-    /// Simplified version using the already implemented functions
-    pub fn get_token_quote_ratio_simple(&self) -> Option<f64> {
-        // Directly use the get_trade_price function which already calculates this
-        self.get_trade_price()
     }
 }
 

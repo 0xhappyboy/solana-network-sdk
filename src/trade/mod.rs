@@ -786,7 +786,7 @@ mod tests {
         );
         println!(
             "Quote Ratio: {:?}",
-            t_info.get_token_quote_ratio()
+            format!("{:.12}", t_info.get_token_quote_ratio().unwrap_or(0.0))
         );
         Ok(())
     }
